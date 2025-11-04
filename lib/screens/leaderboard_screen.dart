@@ -1,47 +1,57 @@
+import 'package:flutter/foundation.dart'; // ValueListenable için
 import 'package:flutter/material.dart';
-import '../ui/app_theme.dart';
-import '../models.dart';
+
+import '../../models.dart';
+import '../../ui/app_theme.dart';
 
 class LeaderboardScreen extends StatelessWidget {
-  final List<PredictionChallenge> challenges;
-  const LeaderboardScreen({super.key, required this.challenges});
+  const LeaderboardScreen({
+    super.key,
+    required this.challenges,
+  });
 
-  int get myTotal => challenges.fold(0, (a, c) => a + c.points);
+  final ValueListenable<List<PredictionChallenge>> challenges;
 
   @override
   Widget build(BuildContext context) {
-    final rows = <(String ad, int puan)>[
-      ('Sen', myTotal),
-      ('Bot-A', (myTotal * .85).round()),
-      ('Bot-B', (myTotal * .70).round()),
-      ('Bot-C', (myTotal * .55).round()),
-    ]..sort((a, b) => b.$2.compareTo(a.$2));
+    return ValueListenableBuilder<List<PredictionChallenge>>(
+      valueListenable: challenges,
+      builder: (context, list, _) {
+        final Map<String, int> totals = {};
+        for (final c in list) {
+          final add = c.points + c.assists + c.rebounds;
+          totals.update(c.playerName, (v) => v + add, ifAbsent: () => add);
+        }
 
-    return ListView.separated(
-      itemCount: rows.length,
-      separatorBuilder: (_, __) => Gaps.h12,
-      itemBuilder: (_, i) {
-        final r = rows[i];
-        return Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: .9),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.orange.withValues(alpha: .25)),
-          ),
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: i == 0 ? AppColors.yellow : AppColors.navy.withValues(alpha: .6),
-                foregroundColor: Colors.black,
-                child: Text('${i + 1}', style: const TextStyle(fontWeight: FontWeight.w900)),
-              ),
-              Gaps.w12,
-              Expanded(child: Text(r.$1, style: const TextStyle(fontWeight: FontWeight.w800))),
-              const Icon(Icons.bolt, color: AppColors.yellow, size: 18),
-              Gaps.w8,
-              Text('${r.$2} puan', style: const TextStyle(fontWeight: FontWeight.w800)),
-            ],
+        final entries = totals.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+
+        return Scaffold(
+          backgroundColor: AppColors.background,
+          body: ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: entries.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, i) {
+              final e = entries[i];
+              return Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.orange,
+                    foregroundColor: Colors.black,
+                    child: Text('${i + 1}'),
+                  ),
+                  title: Text(e.key),
+                  trailing: Text(
+                    '${e.value}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.yellow,
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         );
       },

@@ -1,53 +1,46 @@
+// lib/data/mock.dart
 import '../models.dart';
 
-final Match fbReal = Match(
-  id: 'M1',
-  home: 'Fenerbahçe',
-  away: 'Real Madrid',
-  tipoff: '20:45',
-  homePts: 86,
-  awayPts: 79,
-  status: 'FT',
-  roster: [
-    Player(name: 'S. Wilbekin', team: 'Fenerbahçe', pts: 19, reb: 3, ast: 5),
-    Player(name: 'N. Hayes-Davis', team: 'Fenerbahçe', pts: 14, reb: 6, ast: 2),
-    Player(name: 'M. Hezonja', team: 'Real Madrid', pts: 17, reb: 5, ast: 2),
-    Player(name: 'W. Tavares', team: 'Real Madrid', pts: 12, reb: 9, ast: 1),
-  ],
-);
+// Örnek oyuncular
+const _efes = [
+  Player(id: 'p-larkin', name: 'Shane Larkin'),
+  Player(id: 'p-beaubois', name: 'Rodrigue Beaubois'),
+  Player(id: 'p-pleiss', name: 'Tibor Pleiss'),
+];
 
-final Match efesBarca = Match(
-  id: 'M2',
-  home: 'Anadolu Efes',
-  away: 'Barcelona',
-  tipoff: '21:00',
-  status: 'Q4 03:12',
-  homePts: 71,
-  awayPts: 73,
-  roster: [
-    Player(name: 'S. Larkin', team: 'Anadolu Efes', pts: 21, reb: 3, ast: 7),
-    Player(name: 'W. Clyburn', team: 'Anadolu Efes', pts: 13, reb: 4, ast: 2),
-    Player(name: 'W. Hernangómez', team: 'Barcelona', pts: 15, reb: 7, ast: 1),
-    Player(name: 'N. Laprovittola', team: 'Barcelona', pts: 11, reb: 2, ast: 6),
-  ],
-);
+const _monaco = [
+  Player(id: 'p-mike', name: 'Mike James'),
+  Player(id: 'p-okobo', name: 'Elie Okobo'),
+  Player(id: 'p-john', name: 'John Brown'),
+];
 
-final Match olyPartizan = Match(
-  id: 'M3',
-  home: 'Olympiacos',
-  away: 'Partizan',
-  tipoff: '22:00',
-  status: 'Scheduled',
-  roster: [
-    Player(name: 'K. Papanikolaou', team: 'Olympiacos', pts: 0, reb: 0, ast: 0),
-    Player(name: 'N. Milutinov', team: 'Olympiacos', pts: 0, reb: 0, ast: 0),
-    Player(name: 'K. Punter', team: 'Partizan', pts: 0, reb: 0, ast: 0),
-    Player(name: 'F. Kaminsky', team: 'Partizan', pts: 0, reb: 0, ast: 0),
-  ],
-);
+const _fener = [
+  Player(id: 'p-wilbekin', name: 'Scottie Wilbekin'),
+  Player(id: 'p-guduric', name: 'Marko Guduric'),
+  Player(id: 'p-motley', name: 'Johnathan Motley'),
+];
 
-final List<Match> mockMatches = [fbReal, efesBarca, olyPartizan];
+// Maçlar + skorlar (Skorlar ekranı bunları gösterir)
+final List<MatchGame> mockGames = [
+  MatchGame(
+    id: 'g1',
+    homeTeam: 'Anadolu Efes',
+    awayTeam: 'AS Monaco',
+    homeScore: 87,
+    awayScore: 83,
+    tipoff: DateTime.now().subtract(const Duration(hours: 2)),
+    roster: [..._efes, ..._monaco],
+  ),
+  MatchGame(
+    id: 'g2',
+    homeTeam: 'Fenerbahçe',
+    awayTeam: 'Virtus Bologna',
+    homeScore: 79,
+    awayScore: 76,
+    tipoff: DateTime.now().subtract(const Duration(days: 1)),
+    roster: [..._fener],
+  ),
+];
 
-/// simple helper: flatten all match rosters
-List<Player> allPlayersToday() =>
-    mockMatches.expand((m) => m.roster).toList();
+// Başlangıçta boş bir liste; kullanıcı tahmin yaptıkça dolacak
+final List<PredictionChallenge> mockChallenges = [];

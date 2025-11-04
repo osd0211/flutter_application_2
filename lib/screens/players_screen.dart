@@ -1,67 +1,57 @@
+// lib/screens/players_screen.dart
 import 'package:flutter/material.dart';
 import '../data/mock.dart';
 import '../models.dart';
 
-class PlayersScreen extends StatefulWidget {
+class PlayersScreen extends StatelessWidget {
   const PlayersScreen({super.key});
-  @override
-  State<PlayersScreen> createState() => _PlayersScreenState();
-}
-
-class _PlayersScreenState extends State<PlayersScreen> {
-  List<Player> data = allPlayersToday();
-  String sort = 'PTS';
-
-  void _sortBy(String key) {
-    setState(() {
-      sort = key;
-      switch (key) {
-        case 'REB':
-          data.sort((a,b) => b.reb.compareTo(a.reb));
-          break;
-        case 'AST':
-          data.sort((a,b) => b.ast.compareTo(a.ast));
-          break;
-        default:
-          data.sort((a,b) => b.pts.compareTo(a.pts));
-      }
-    });
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _sortBy('PTS');
-  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Players'),
-        actions: [
-          PopupMenuButton<String>(
-            initialValue: sort,
-            onSelected: _sortBy,
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'PTS', child: Text('Sort by PTS')),
-              PopupMenuItem(value: 'REB', child: Text('Sort by REB')),
-              PopupMenuItem(value: 'AST', child: Text('Sort by AST')),
-            ],
-          )
-        ],
-      ),
-      body: ListView.separated(
-        itemCount: data.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (context, i) {
-          final p = data[i];
-          return ListTile(
-            title: Text('${p.name} • ${p.team}'),
-            subtitle: Text('PTS ${p.pts.toStringAsFixed(1)}  •  REB ${p.reb.toStringAsFixed(1)}  •  AST ${p.ast.toStringAsFixed(1)}'),
-          );
-        },
-      ),
+    // Oyuncu bazında birikim
+    final Map<String, _Agg> agg = {};
+    for (final PredictionChallenge c in mockChallenges) {
+      final key = c.playerId;
+      agg.putIfAbsent(key, () => _Agg(name: c.playerName));
+      agg[key]!
+        ..pts += c.points
+        ..ast += c.assists
+        ..reb += c.rebounds
+        ..count += 1;
+    }
+
+    final items = agg.entries.toList()
+      ..sort((a, b) => (b.value.pts + b.value.ast + b.value.reb)
+          .compareTo(a.value.pts + a.value.ast + a.value.reb));
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(12),
+      itemCount: items.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, i) {
+        final e = items[i];
+        final a = e.value;
+        return Card(
+          child: ListTile(
+            leading: CircleAvatar(child: Text('${i + 1}')),
+            title: Text(a.name),
+            subtitle: Text(
+              'Toplam: ${a.pts} sayı • ${a.ast} asist • ${a.reb} ribaund  '
+              '(kayıt: ${a.count})',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+          ),
+        );
+      },
     );
   }
+}
+
+class _Agg {
+  _Agg({required this.name});
+  final String name;
+  int pts = 0;
+  int ast = 0;
+  int reb = 0;
+  int count = 0;
 }

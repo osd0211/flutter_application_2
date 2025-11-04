@@ -1,63 +1,53 @@
-enum StatType { pts, reb, ast }
+// lib/models.dart
+import 'package:flutter/material.dart';
 
-class Match {
-  final String id;
-  final String home;
-  final String away;
-  final String tipoff;
-  int homePts;
-  int awayPts;
-  String status;
-  bool favorite;
-  final List<Player> roster;
-
-  Match({
-    required this.id,
-    required this.home,
-    required this.away,
-    required this.tipoff,
-    this.homePts = 0,
-    this.awayPts = 0,
-    this.status = 'Scheduled',
-    this.favorite = false,
-    this.roster = const [],
-  });
-}
-
+// Basit oyuncu modeli
 class Player {
+  final String id;
   final String name;
-  final String team;
-  double pts;
-  double reb;
-  double ast;
+  const Player({required this.id, required this.name});
+}
 
-  Player({
-    required this.name,
-    required this.team,
-    this.pts = 0,
-    this.reb = 0,
-    this.ast = 0,
+// Maç modeli (skor ve maçtaki oyuncular)
+class MatchGame {
+  final String id;
+  final String homeTeam;
+  final String awayTeam;
+  final int homeScore;
+  final int awayScore;
+  final DateTime tipoff;
+  final List<Player> roster; // Bu maçta kullanılabilir oyuncular
+
+  const MatchGame({
+    required this.id,
+    required this.homeTeam,
+    required this.awayTeam,
+    required this.homeScore,
+    required this.awayScore,
+    required this.tipoff,
+    required this.roster,
   });
 }
 
-enum ChallengeStatus { pending, won, lost }
-
+// Tahmin (tek oyuncu için 3 istatistik)
 class PredictionChallenge {
   final String id;
   final String matchId;
+  final String playerId;
   final String playerName;
-  final String team;
-  final Map<StatType, int> predictions;
-  int points;
-  ChallengeStatus status;
+  final int points;
+  final int assists;
+  final int rebounds;
+  final DateTime createdAt;
 
-  PredictionChallenge({
+  const PredictionChallenge({
     required this.id,
     required this.matchId,
+    required this.playerId,
     required this.playerName,
-    required this.team,
-    required this.predictions,
-    this.points = 0,
-    this.status = ChallengeStatus.pending,
+    required this.points,
+    required this.assists,
+    required this.rebounds,
+    required this.createdAt,
   });
 }
