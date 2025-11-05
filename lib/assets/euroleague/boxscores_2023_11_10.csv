@@ -1,0 +1,12 @@
+date,game_id,home,away,tipoff_utc,player_id,player_name,team,pts,ast,reb
+2023-11-10,g123,Anadolu Efes,Fenerbahçe,2023-11-10T17:30:00Z,p-larkin,Shane Larkin,Anadolu Efes,21,7,4
+2023-11-10,g123,Anadolu Efes,Fenerbahçe,2023-11-10T17:30:00Z,p-beaubois,Rodrigue Beaubois,Anadolu Efes,14,4,2
+2023-11-10,g123,Anadolu Efes,Fenerbahçe,2023-11-10T17:30:00Z,p-pleiss,Tibor Pleiss,Anadolu Efes,12,1,6
+2023-11-10,g123,Anadolu Efes,Fenerbahçe,2023-11-10T17:30:00Z,p-wilbekin,Scottie Wilbekin,Fenerbahçe,18,5,3
+2023-11-10,g123,Anadolu Efes,Fenerbahçe,2023-11-10T17:30:00Z,p-guduric,Marko Gudurić,Fenerbahçe,17,6,5
+2023-11-10,g123,Anadolu Efes,Fenerbahçe,2023-11-10T17:30:00Z,p-motley,Johnathan Motley,Fenerbahçe,15,2,9
+
+2023-11-10,g456,Panathinaikos,Barcelona,2023-11-10T19:00:00Z,p-sloukas,Kostas Sloukas,Panathinaikos,10,8,3
+2023-11-10,g456,Panathinaikos,Barcelona,2023-11-10T19:00:00Z,p-nunn,Kendrick Nunn,Panathinaikos,21,3,4
+2023-11-10,g456,Panathinaikos,Barcelona,2023-11-10T19:00:00Z,p-satoransky,Tomas Satoransky,Barcelona,9,7,4
+2023-11-10,g456,Panathinaikos,Barcelona,2023-11-10T19:00:00Z,p-mirotic,Nikola Mirotic,Barcelona,18,2,6

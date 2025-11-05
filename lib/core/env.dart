@@ -1,6 +1,8 @@
 // Uygulama özellik bayrakları ve global bağımlılıklar
 import '../services/prediction_repository.dart';
 import '../services/auth_service.dart';
+import '../services/data_source.dart';
+import '../models.dart';
 
 class Env {
   /// Login ekranını kullan (true) ya da kapat (false)
@@ -21,4 +23,11 @@ class Env {
   static PredictionRepository get predictions => MockPredictionRepository();
   // Yarın Supabase’e geçmek istersen:
   // static PredictionRepository get predictions => SupabasePredictionRepository();
+
+   static final DataSource data = CsvDataSource();
+
+  // Ekranlar arası paylaşmak için basit cache:
+  static DateTime selectedDate = DateTime(2023, 11, 10);
+  static List<MatchGame> lastMatches = [];
+  static Map<String, PlayerStat> lastBoxscore = {}; // son seçilen maç için
 }

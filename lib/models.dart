@@ -1,44 +1,56 @@
 // lib/models.dart
-import 'package:flutter/material.dart';
 
-// Basit oyuncu modeli
+/// Basit Oyuncu modeli
 class Player {
   final String id;
   final String name;
-  const Player({required this.id, required this.name});
+  final String team;
+  const Player({required this.id, required this.name, required this.team});
 }
 
-// Maç modeli (skor ve maçtaki oyuncular)
+/// Maç modeli (mock)
 class MatchGame {
   final String id;
-  final String homeTeam;
-  final String awayTeam;
-  final int homeScore;
-  final int awayScore;
-  final DateTime tipoff;
-  final List<Player> roster; // Bu maçta kullanılabilir oyuncular
+  final String home;
+  final String away;
+  final DateTime tipoff; // başlama saati
+  final bool live;       // şu an oynanıyor mu
+  final bool finished;   // bitti mi
+  /// Bu maçta yer alan oyuncular (basit mock)
+  final List<Player> roster;
 
   const MatchGame({
     required this.id,
-    required this.homeTeam,
-    required this.awayTeam,
-    required this.homeScore,
-    required this.awayScore,
+    required this.home,
+    required this.away,
     required this.tipoff,
+    required this.live,
+    required this.finished,
     required this.roster,
   });
+
+  String get statusLabel {
+    if (finished) return 'Bitti';
+    if (live) return 'Oynanıyor';
+    return 'Yaklaşan';
+  }
 }
 
-// Tahmin (tek oyuncu için 3 istatistik)
+enum ChallengeStatus { pending, scored }
+
+/// Kullanıcının tahmini
 class PredictionChallenge {
   final String id;
   final String matchId;
   final String playerId;
   final String playerName;
+
   final int points;
   final int assists;
   final int rebounds;
+
   final DateTime createdAt;
+  final ChallengeStatus status;
 
   const PredictionChallenge({
     required this.id,
@@ -49,5 +61,15 @@ class PredictionChallenge {
     required this.assists,
     required this.rebounds,
     required this.createdAt,
+    this.status = ChallengeStatus.pending,
   });
 }
+
+// Basit oyuncu istatistiği (bugünkü box score)
+class PlayerStat {
+  final int pts;
+  final int ast;
+  final int reb;
+  const PlayerStat({this.pts = 0, this.ast = 0, this.reb = 0});
+}
+
