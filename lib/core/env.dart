@@ -1,33 +1,24 @@
-// Uygulama özellik bayrakları ve global bağımlılıklar
-import '../services/prediction_repository.dart';
+// lib/core/env.dart
+// Ortak environment ayarları: auth, repo'lar, vb.
+
 import '../services/auth_service.dart';
-import '../services/data_source.dart';
-import '../models.dart';
+import '../services/prediction_repository.dart';
+import '../services/game_repository.dart';
 
 class Env {
-  /// Login ekranını kullan (true) ya da kapat (false)
-  static const bool useAuth = true;
+  // (İleride Supabase kullanacaksan doldurursun; şimdilik kullanılmıyor)
+  static const String supabaseUrl = '';
+  static const String supabaseAnonKey = '';
 
-  /// Auth tipi: false => MockAuth, true => SupabaseAuth
+  /// Mock kimlik doğrulama
+  static final IAuthService auth = AuthServiceMock();
+
+  /// Tahmin (prediction) verileri
+  static final predictions = PredictionRepository();
+
+  /// Maç & boxscore verileri (CSV okuyan repo)
+  static final games = GameRepository();
+
+  /// Supabase Auth kullanımı (şimdilik kapalı)
   static const bool useSupabaseAuth = false;
-
-  /// Supabase bilgileri (ileride doldurursun)
-  static const String supabaseUrl = 'https://hygyowdbnpgkxtguwpzx.supabase.co';
-  static const String supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5Z3lvd2RibnBna3h0Z3V3cHp4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIyNDc4NTEsImV4cCI6MjA3NzgyMzg1MX0.3nFHXI_YH57xShKagaMqFslKRRghyuOockj0exLSQKQ';
-
-  /// Auth servis seçimi
-  static AuthService get auth =>
-      useSupabaseAuth ? SupabaseAuthService() : MockAuthService();
-
-  /// Prediction repo seçimi (bugün MOCK)
-  static PredictionRepository get predictions => MockPredictionRepository();
-  // Yarın Supabase’e geçmek istersen:
-  // static PredictionRepository get predictions => SupabasePredictionRepository();
-
-   static final DataSource data = CsvDataSource();
-
-  // Ekranlar arası paylaşmak için basit cache:
-  static DateTime selectedDate = DateTime(2023, 11, 10);
-  static List<MatchGame> lastMatches = [];
-  static Map<String, PlayerStat> lastBoxscore = {}; // son seçilen maç için
 }

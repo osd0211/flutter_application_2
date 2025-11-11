@@ -1,50 +1,63 @@
 import 'package:flutter/material.dart';
-import '../core/env.dart';
-import '../models.dart';
+import 'package:provider/provider.dart';
+
+import '../services/game_repository.dart';
+import '../ui/app_theme.dart';
 
 class PlayersScreen extends StatelessWidget {
   const PlayersScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Env.lastMatches -> seçili güne ait karşılaşmalar
-    // Env.lastBoxscore -> en son tıklanan maçın boxscore'u (playerId -> stat)
-    final matches = Env.lastMatches;
-
-    // Tüm oyuncuları tekilleştir
-    final Map<String, Player> map = {};
-    for (final g in matches) {
-      for (final p in g.roster) {
-        map[p.id] = p;
-      }
-    }
-    final players = map.values.toList();
-    final stats = Env.lastBoxscore; // olabilir boş (tap etmeden)
+    final repo = context.watch<GameRepository>();
+    final day = repo.selectedDay;
 
     return Scaffold(
-      appBar: AppBar(title: Text('Oyuncular (${Env.selectedDate.toLocal().toString().split(' ').first})')),
-      body: players.isEmpty
-          ? const Center(child: Text('Önce Skorlar’da bir gün seç / boxscore yükle'))
-          : ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: players.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (_, i) {
-                final p = players[i];
-                final s = stats[p.id]; // seçili maçın boxscore’u yüklüyse gelir
-                final statText = (s == null)
-                    ? 'Boxscore yüklenmedi'
-                    : '${s.pts} sayı • ${s.ast} asist • ${s.reb} rib';
+      backgroundColor: AppColors.background,
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: day == null
+            ? const Center(
+                child: Text('Önce Skorlar’dan bir gün seç.',
+                    style: TextStyle(color: Colors.white70)),
+              )
+            : _Body(repo: repo),
+      ),
+    );
+  }
+}
 
-                return Card(
-                  child: ListTile(
-                    leading: const CircleAvatar(child: Icon(Icons.person)),
-                    title: Text(p.name),
-                    subtitle: Text('${p.team} • $statText'),
-                  ),
-                );
-              },
-            ),
+class _Body extends StatelessWidget {
+  const _Body({required this.repo});
+  final GameRepository repo;
+
+  @override
+  Widget build(BuildContext context) {
+    final box = repo.boxscoreForSelected();
+    if (box.isEmpty) {
+      return const Center(
+        child: Text('Bu gün için oyuncu istatistiği yok.',
+            style: TextStyle(color: Colors.white70)),
+      );
+    }
+
+    // Örnek: oyuncuları sayıya göre sırala ve göster
+    final entries = box.entries.toList()
+      ..sort((a, b) => b.value.pts.compareTo(a.value.pts));
+
+    return ListView.separated(
+      itemCount: entries.length,
+      separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white12),
+      itemBuilder: (_, i) {
+        final id = entries[i].key; // elinde isim yoksa id gösterir
+        final s = entries[i].value;
+        return ListTile(
+          leading: const CircleAvatar(radius: 18),
+          title: Text(id, style: const TextStyle(color: Colors.white)),
+          subtitle: Text('Sayı ${s.pts} • Asist ${s.ast} • Rib ${s.reb}',
+              style: const TextStyle(color: Colors.white70)),
+        );
+      },
     );
   }
 }

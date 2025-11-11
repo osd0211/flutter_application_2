@@ -6,6 +6,7 @@ class AppColors {
   static const yellow = Color(0xFFFFD54F);  // sarı
   static const background = Color(0xFF0F1531);
   static const surface = Color(0xFF151C3A);
+  static const card       = Color(0xFF10263F);
 }
 
 class AppTheme {
