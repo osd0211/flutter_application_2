@@ -72,4 +72,22 @@ class PlayerStat {
   final int reb;
   const PlayerStat({this.pts = 0, this.ast = 0, this.reb = 0});
 }
+/// Bir maç için toplam skorlar (CSV'den hesaplanır)
+class MatchScore {
+  final String gameId;
+  final String home;
+  final String away;
+  final DateTime tipoff;
+  final int homePts;
+  final int awayPts;
+
+  const MatchScore({
+    required this.gameId,
+    required this.home,
+    required this.away,
+    required this.tipoff,
+    required this.homePts,
+    required this.awayPts,
+  });
+}
 

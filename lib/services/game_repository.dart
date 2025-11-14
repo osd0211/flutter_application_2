@@ -1,5 +1,5 @@
 // lib/services/game_repository.dart
-// Amaç: Çok-gün box-score saklama, gün seçme, lazy/preload yükleme.
+// Amaç: Çok-gün box-score saklama, gün seçme, lazy/preload yükleme + isim ve maç skoru önbelleği.
 
 import 'package:flutter/foundation.dart';
 import '../models.dart';
@@ -8,70 +8,64 @@ import 'data_source.dart';
 class GameRepository extends ChangeNotifier {
   // day -> {playerId -> PlayerStat}
   final Map<DateTime, Map<String, PlayerStat>> _boxscores = {};
-  DateTime? _selectedDay;
+  // day -> {playerId -> Player}
+  final Map<DateTime, Map<String, Player>> _players = {};
+  // day -> List<MatchScore>
+  final Map<DateTime, List<MatchScore>> _matchScores = {};
 
+  DateTime? _selectedDay;
   DateTime? get selectedDay => _selectedDay;
 
-  /// Yüklü günlerin listesi (tarih olarak). UI'da dropdown'a basmak için.
+  /// UI’da dropdown vb. için seçili güne ait boxscore anahtarlarından gün üretmek yerine,
+  /// ekran tarafında zaten gün listesi hazırlanıyor. Bu getter yine de geriye
+  /// önceden yüklenmiş günleri döndürür (gerekebilecek yerler için).
   List<DateTime> get availableDays {
-    final list = _boxscores.keys.toList()..sort();
+    final set = <DateTime>{}
+      ..addAll(_boxscores.keys)
+      ..addAll(_players.keys)
+      ..addAll(_matchScores.keys);
+    final list = set.toList()..sort();
     return list;
   }
 
-  /// Seçili gün için boxscore var mı?
-  bool get hasBoxscoreForSelected {
-    final d = _selectedDay;
-    if (d == null) return false;
-    return _boxscores.containsKey(_dateOnly(d));
-  }
-
-  /// Seçili günün boxscore'u. Yoksa boş map döner.
   Map<String, PlayerStat> boxscoreForSelected() {
     final d = _selectedDay;
-    if (d == null) return const {};
-    return _boxscores[_dateOnly(d)] ?? const {};
+    if (d == null) return <String, PlayerStat>{};
+    return _boxscores[d] ?? <String, PlayerStat>{};
   }
 
-  /// Belirli bir günün boxscore'unu set et.
-  void setBoxscore(DateTime day, Map<String, PlayerStat> box) {
-    _boxscores[_dateOnly(day)] = box;
-    notifyListeners();
+  Map<String, Player> playersForSelected() {
+    final d = _selectedDay;
+    if (d == null) return <String, Player>{};
+    return _players[d] ?? <String, Player>{};
   }
 
-  /// Gün seç.
-  void selectDay(DateTime day) {
-    _selectedDay = _dateOnly(day);
-    notifyListeners();
+  List<MatchScore> matchScoresForSelected() {
+    final d = _selectedDay;
+    if (d == null) return const <MatchScore>[];
+    return _matchScores[d] ?? const <MatchScore>[];
   }
 
-  /// Lazy: Gün yüklenmemişse assets'ten yükle.
+  /// Verilen gün için (yüklü değilse) verileri yükler.
   Future<void> ensureDayLoaded(DateTime day) async {
-    final d = _dateOnly(day);
-    if (_boxscores.containsKey(d)) return;
+    final key = _dateOnly(day);
 
-    final yyyy = d.year.toString().padLeft(4, '0');
-    final mm = d.month.toString().padLeft(2, '0');
-    final dd = d.day.toString().padLeft(2, '0');
-    final assetPath = 'assets/euroleague/boxscores_${yyyy}_${mm}_$dd.csv';
-
-    final box = await DataSource.instance.loadBoxscoreFromAssets(assetPath);
-    setBoxscore(d, box);
+    if (!_boxscores.containsKey(key)) {
+      _boxscores[key] = await DataSource.instance.loadBoxscoreFor(key);
+    }
+    if (!_players.containsKey(key)) {
+      _players[key] = await DataSource.instance.loadPlayersMapFor(key);
+    }
+    if (!_matchScores.containsKey(key)) {
+      _matchScores[key] = await DataSource.instance.loadMatchScoresFor(key);
+    }
   }
 
-  /// İstersen uygulama açılışında tüm CSV'leri preload edebilirsin.
-  Future<void> preloadAllFromAssets() async {
-    final paths = await DataSource.instance.listAllCsvAssets();
-    for (final p in paths) {
-      final day = DataSource.extractDateFromPath(p);
-      if (day == null) continue;
-      final box = await DataSource.instance.loadBoxscoreFromAssets(p);
-      _boxscores[_dateOnly(day)] = box;
-    }
-    // Varsayılan bir gün seç (son gün)
-    if (_selectedDay == null && _boxscores.isNotEmpty) {
-      final last = (availableDays).last;
-      _selectedDay = last;
-    }
+  /// Günü seç ve dinleyicileri tetikle.
+  Future<void> selectDay(DateTime day) async {
+    final key = _dateOnly(day);
+    await ensureDayLoaded(key);
+    _selectedDay = key;
     notifyListeners();
   }
 
@@ -79,7 +73,6 @@ class GameRepository extends ChangeNotifier {
   PlayerStat statForSelected(String playerId) {
     final box = boxscoreForSelected();
     return box[playerId] ?? const PlayerStat();
-    // PlayerStat() default 0 değerlerle tanımlı olmalı (models.dart’ta).
   }
 
   DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);

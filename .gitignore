@@ -43,3 +43,5 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+data_raw/euroleague_points.csv
+data_raw/euroleague_play_by_play.csv

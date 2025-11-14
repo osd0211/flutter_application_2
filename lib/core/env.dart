@@ -6,7 +6,7 @@ import '../services/prediction_repository.dart';
 import '../services/game_repository.dart';
 
 class Env {
-  // (İleride Supabase kullanacaksan doldurursun; şimdilik kullanılmıyor)
+  /// Supabase kullanacaksan doldurursun; şimdilik mock
   static const String supabaseUrl = '';
   static const String supabaseAnonKey = '';
 
@@ -14,10 +14,10 @@ class Env {
   static final IAuthService auth = AuthServiceMock();
 
   /// Tahmin (prediction) verileri
-  static final predictions = PredictionRepository();
+  static final PredictionRepository predictions = MemoryPredictionRepository();
 
   /// Maç & boxscore verileri (CSV okuyan repo)
-  static final games = GameRepository();
+  static final GameRepository games = GameRepository();
 
   /// Supabase Auth kullanımı (şimdilik kapalı)
   static const bool useSupabaseAuth = false;

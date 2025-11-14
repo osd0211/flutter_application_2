@@ -7,6 +7,7 @@ class AppColors {
   static const background = Color(0xFF0F1531);
   static const surface = Color(0xFF151C3A);
   static const card       = Color(0xFF10263F);
+   static const accent = orange; // spinner/badge vb. için
 }
 
 class AppTheme {

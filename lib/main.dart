@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/env.dart';
 import 'models.dart';
+import 'services/game_repository.dart';
+import 'services/auth_service.dart';
 import 'services/prediction_repository.dart';
-
 import 'ui/app_theme.dart';
+
 import 'screens/scores_screen.dart';
 import 'screens/players_screen.dart';
 import 'screens/challenges_screen.dart';
@@ -27,20 +30,30 @@ Future<void> main() async {
 }
 
 class EuroScoreApp extends StatelessWidget {
-  const EuroScoreApp({super.key}); // İstersen {super.key} kalabilir; sorun yok.
+  const EuroScoreApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'EuroScore Demo',
-      theme: AppTheme.theme,
-      debugShowCheckedModeBanner: false,
-      home: const AuthGate(),
-      routes: {
-        '/home': (_) => const _HomeShell(),
-        '/login': (_) => const LoginScreen(),
-      },
-    );
+    // Repository ve Auth’u uygulamaya enjekte ediyoruz.
+  return MultiProvider(
+  providers: [
+    // ESKİ: Provider<GameRepository>.value(value: Env.games),
+    ChangeNotifierProvider<GameRepository>.value(value: Env.games),
+
+    Provider<PredictionRepository>.value(value: Env.predictions),
+    Provider<IAuthService>.value(value: Env.auth),
+  ],
+  child: MaterialApp(
+    title: 'EuroScore Demo',
+    theme: AppTheme.theme,
+    debugShowCheckedModeBanner: false,
+    home: const AuthGate(),
+    routes: {
+      '/home': (_) => const _HomeShell(),
+      '/login': (_) => const LoginScreen(),
+    },
+  ),
+);
   }
 }
 
@@ -49,15 +62,14 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Mock/gerçek auth’a göre giriş kontrolü
-    final uid = Env.auth.currentUserId;
+    final uid = context.read<IAuthService>().currentUserId; // Env.auth yerine Provider
     if (uid == null) return const LoginScreen();
     return const _HomeShell();
   }
 }
 
 class _HomeShell extends StatefulWidget {
-  const _HomeShell();
+  const _HomeShell({super.key});
 
   @override
   State<_HomeShell> createState() => _HomeShellState();
@@ -66,9 +78,8 @@ class _HomeShell extends StatefulWidget {
 class _HomeShellState extends State<_HomeShell> {
   int index = 0;
 
-  // In-memory store + repo (mock veya gerçek)
+  // In-memory store (tahminleri burada tutuyoruz)
   final List<PredictionChallenge> _store = <PredictionChallenge>[];
-  final PredictionRepository _repo = Env.predictions;
 
   // Liderlik için dinlenebilir liste
   final ValueNotifier<List<PredictionChallenge>> _challengesVN =
@@ -84,15 +95,26 @@ class _HomeShellState extends State<_HomeShell> {
       const ScoresScreen(),
       const PlayersScreen(),
 
-      // Tahmin ekranı — değişiklik VN’ye yazılır
-   ChallengesScreen(
-  store: _store,
-  onChanged: (list) {
-    _challengesVN.value = List<PredictionChallenge>.unmodifiable(list);
-  },
-),
+      // Tahmin ekranı: değişiklikleri Leaderboard’a aktar
+      // Eğer ChallengesScreen(repo: ...) bekliyorsa aşağıdaki satırın
+      // yorumunu açıp repo paramını ver:
+      //
+      // ChallengesScreen(
+      //   store: _store,
+      //   repo: context.read<PredictionRepository>(),
+      //   onChanged: (list) {
+      //     _challengesVN.value = List<PredictionChallenge>.unmodifiable(list);
+      //   },
+      // ),
 
-      // Liderlik ekranı — ValueListenable bekler
+      ChallengesScreen(
+        store: _store,
+        onChanged: (list) {
+          _challengesVN.value = List<PredictionChallenge>.unmodifiable(list);
+        },
+      ),
+
+      // Liderlik ekranı – ValueListenable bekler
       LeaderboardScreen(challenges: _challengesVN),
     ];
   }
@@ -106,8 +128,8 @@ class _HomeShellState extends State<_HomeShell> {
           IconButton(
             tooltip: 'Çıkış',
             onPressed: () async {
-              await Env.auth.signOut();
-              if (!context.mounted) return;
+              await context.read<IAuthService>().signOut();
+              if (!mounted) return;
               Navigator.of(context)
                   .pushNamedAndRemoveUntil('/login', (_) => false);
             },
@@ -119,7 +141,6 @@ class _HomeShellState extends State<_HomeShell> {
       bottomNavigationBar: NavigationBar(
         height: 65,
         selectedIndex: index,
-        // SDK’n “withOpacity deprecated” uyarısı varsa withValues kullan.
         indicatorColor: Colors.orange.withValues(alpha: .25),
         onDestinationSelected: (i) => setState(() => index = i),
         destinations: const [

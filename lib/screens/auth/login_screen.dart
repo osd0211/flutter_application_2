@@ -1,6 +1,6 @@
-// lib/screens/login_screen.dart
+// lib/screens/auth/login_screen.dart
 import 'package:flutter/material.dart';
-import '../core/env.dart';
+import 'package:flutter_application_2/core/env.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -10,46 +10,68 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final _mail = TextEditingController();
+  final _pass = TextEditingController();
   bool _busy = false;
 
   @override
-  Widget build(BuildContext context) {
-    final uid = Env.auth.currentUserId;
+  void dispose() {
+    _mail.dispose();
+    _pass.dispose();
+    super.dispose();
+  }
 
+ Future<void> _doLogin() async {
+  setState(() => _busy = true);
+  final email = _mail.text.trim();
+  final pass = _pass.text;
+
+  try {
+    await Env.auth.signIn(email, pass);
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Login successful')),
+    );
+
+    // ÖNEMLİ: Ana sayfaya yönlendir
+    Navigator.of(context).pushNamedAndRemoveUntil('/home', (_) => false);
+  } catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Login failed: $e')),
+    );
+  } finally {
+    if (mounted) setState(() => _busy = false);
+  }
+}
+
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Giriş')),
+      appBar: AppBar(title: const Text('Login')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Card(
-              child: ListTile(
-                title: const Text('Durum'),
-                subtitle: Text(uid == null ? 'Çıkışta' : 'Giriş yapıldı: $uid'),
-              ),
+            TextFormField(
+              controller: _mail,
+              decoration: const InputDecoration(labelText: 'Email'),
+              keyboardType: TextInputType.emailAddress,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _pass,
+              decoration: const InputDecoration(labelText: 'Password'),
+              obscureText: true,
+            ),
+            const SizedBox(height: 24),
             FilledButton(
-              onPressed: _busy || uid != null
-                  ? null
-                  : () async {
-                      setState(() => _busy = true);
-                      await Env.auth.signInAnonymously();
-                      if (mounted) setState(() => _busy = false);
-                    },
-              child: const Text('Anonim Giriş Yap'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: _busy || uid == null
-                  ? null
-                  : () async {
-                      setState(() => _busy = true);
-                      await Env.auth.signOut();
-                      if (mounted) setState(() => _busy = false);
-                    },
-              child: const Text('Çıkış Yap'),
+              onPressed: _busy ? null : _doLogin,
+              child: _busy
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text('Giriş Yap'),
             ),
           ],
         ),
