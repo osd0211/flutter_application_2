@@ -25,7 +25,7 @@ class _ScoresScreenState extends State<ScoresScreen> {
 
   Future<void> _loadDays() async {
     final assets = await DataSource.instance.listAllCsvAssets();
-    final re = RegExp(r'boxscores_(\d{4})_(\d{2})_(\d{2})\.csv');
+    final re = RegExp(r'boxscores_(\d{4})[-_](\d{2})[-_](\d{2})\.csv$');
     final parsed = <DateTime>[];
     for (final p in assets) {
       final m = re.firstMatch(p);
