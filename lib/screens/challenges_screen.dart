@@ -5,18 +5,18 @@ import 'package:provider/provider.dart';
 import '../models.dart';
 import '../services/game_repository.dart';
 
-enum SimulationPhase { preGame, inGame, finished }
-
 class ChallengesScreen extends StatefulWidget {
   const ChallengesScreen({
     super.key,
     required this.store,
     required this.onChanged,
-    this.repo, // opsiyonel, dokunmadım
+    this.repo,
   });
 
   final List<PredictionChallenge> store;
   final void Function(List<PredictionChallenge>) onChanged;
+
+  // sadece test vb. için dışardan repo geçmek istersen
   final Object? repo;
 
   @override
@@ -34,19 +34,22 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
   final TextEditingController _ast = TextEditingController();
   final TextEditingController _reb = TextEditingController();
 
-  SimulationPhase _phase = SimulationPhase.preGame;
-
   @override
   void initState() {
     super.initState();
     // GameRepository context'e bind olduktan sonra veriyi çekelim
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _reloadFromGameRepository();
+      final repo = context.read<GameRepository>();
+      _reloadFromGameRepository(); // ilk yükleme
+      repo.addListener(_reloadFromGameRepository); // gün / phase değişince
     });
   }
 
   @override
   void dispose() {
+    final repo = context.read<GameRepository>();
+    repo.removeListener(_reloadFromGameRepository);
+
     _pts.dispose();
     _ast.dispose();
     _reb.dispose();
@@ -57,12 +60,13 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
   // GameRepository'den gerçek maç + oyuncu verisini çek
   // ---------------------------------------------------------------------------
   void _reloadFromGameRepository() {
+    if (!mounted) return;
+
     final repo = context.read<GameRepository>();
 
     final matchScores = repo.matchScoresForSelected();
-    final playersMap = repo.playersForSelected();
 
-    if (matchScores.isEmpty || playersMap.isEmpty) {
+    if (matchScores.isEmpty) {
       setState(() {
         _games = [];
         _selectedGame = null;
@@ -72,31 +76,15 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
       return;
     }
 
-    bool isLive;
-    bool isFinished;
-
-    switch (_phase) {
-      case SimulationPhase.preGame:
-        isLive = false;
-        isFinished = false;
-        break;
-      case SimulationPhase.inGame:
-        isLive = true;
-        isFinished = false;
-        break;
-      case SimulationPhase.finished:
-        isLive = false;
-        isFinished = true;
-        break;
-    }
+    final phase = repo.simulationPhase;
+    final bool isLive = false;
+    final bool isFinished = phase == SimulationPhase.finished;
 
     final List<MatchGame> games = [];
 
     for (final ms in matchScores) {
-      // Bu maçta oynayan oyuncular: takımı ev veya deplasman olanlar
-      final roster = playersMap.values
-          .where((p) => p.team == ms.home || p.team == ms.away)
-          .toList();
+      // 🔥 Bu maçta oynayan oyuncular:
+      final roster = repo.playersForGame(ms.gameId);
 
       games.add(
         MatchGame(
@@ -113,10 +101,21 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
 
     games.sort((a, b) => a.tipoff.compareTo(b.tipoff));
 
+    // Önceki seçili maçı korumaya çalış
+    MatchGame initialGame;
+    if (_selectedGame != null) {
+      final found = games.where((g) => g.id == _selectedGame!.id);
+      initialGame = found.isNotEmpty ? found.first : games.first;
+    } else {
+      initialGame = games.first;
+    }
+
+    final initialPlayers = initialGame.roster;
+
     setState(() {
       _games = games;
-      _selectedGame = games.isNotEmpty ? games.first : null;
-      _players = _selectedGame?.roster ?? const [];
+      _selectedGame = initialGame;
+      _players = initialPlayers;
       _selectedPlayer = _players.isNotEmpty ? _players.first : null;
     });
   }
@@ -136,26 +135,37 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Tahmin kaydet / sil (store + onChanged mimarini koruyorum)
+  // Tahmin kaydet / sil
   // ---------------------------------------------------------------------------
   void _save() {
     if (_selectedGame == null || _selectedPlayer == null) return;
+
+    final phase = context.read<GameRepository>().simulationPhase;
+    // Maç bittiyse tahmin yok
+    if (phase == SimulationPhase.finished) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Maç bittikten sonra tahmin yapılamaz.'),
+        ),
+      );
+      return;
+    }
 
     final p = int.tryParse(_pts.text.trim()) ?? 0;
     final a = int.tryParse(_ast.text.trim()) ?? 0;
     final r = int.tryParse(_reb.text.trim()) ?? 0;
 
- final item = PredictionChallenge(
-  // Basit unique id: zaman damgası
-  id: DateTime.now().microsecondsSinceEpoch.toString(),
-  matchId: _selectedGame!.id,
-  playerId: _selectedPlayer!.id,
-  playerName: _selectedPlayer!.name,
-  points: p,
-  assists: a,
-  rebounds: r,
-  createdAt: DateTime.now(),
-);
+    final item = PredictionChallenge(
+      // Basit unique id: zaman damgası
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      matchId: _selectedGame!.id,
+      playerId: _selectedPlayer!.id,
+      playerName: _selectedPlayer!.name,
+      points: p,
+      assists: a,
+      rebounds: r,
+      createdAt: DateTime.now(),
+    );
 
     setState(() {
       widget.store.add(item);
@@ -167,7 +177,7 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
     _reb.clear();
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Tahmin kaydedildi')),
+      const SnackBar(content: Text('Tahmin kaydedildi.')),
     );
   }
 
@@ -184,43 +194,12 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final repo = context.watch<GameRepository>();
+    final phase = repo.simulationPhase;
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Simülasyon aşaması toggle
-        Text('Simülasyon Aşaması', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 8),
-        ToggleButtons(
-          borderRadius: BorderRadius.circular(12),
-          isSelected: [
-            _phase == SimulationPhase.preGame,
-            _phase == SimulationPhase.inGame,
-            _phase == SimulationPhase.finished,
-          ],
-          onPressed: (index) {
-            setState(() {
-              _phase = SimulationPhase.values[index];
-            });
-            _reloadFromGameRepository(); // live/finished flaglerini güncelle
-          },
-          children: const [
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              child: Text('Maç Öncesi'),
-            ),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              child: Text('Maç İçi'),
-            ),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              child: Text('Maç Bitti'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-
         // MAÇ / OYUNCU SEÇİMİ + INPUT
         Card(
           child: Padding(
@@ -234,6 +213,7 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
                 // Maç seçimi
                 DropdownButtonFormField<MatchGame>(
                   value: _selectedGame,
+                  isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'Maç',
                     border: OutlineInputBorder(),
@@ -242,7 +222,10 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
                       .map(
                         (m) => DropdownMenuItem(
                           value: m,
-                          child: Text('${m.home} – ${m.away} • ${m.statusLabel}'),
+                          child: Text(
+                            '${m.home} – ${m.away} • ${m.statusLabel}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       )
                       .toList(),
@@ -253,6 +236,7 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
                 // Oyuncu seçimi
                 DropdownButtonFormField<Player>(
                   value: _selectedPlayer,
+                  isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'Oyuncu',
                     border: OutlineInputBorder(),
@@ -261,7 +245,10 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
                       .map(
                         (p) => DropdownMenuItem(
                           value: p,
-                          child: Text('${p.name} • ${p.team}'),
+                          child: Text(
+                            p.name,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       )
                       .toList(),
@@ -311,7 +298,8 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: _save,
+                    onPressed:
+                        phase == SimulationPhase.finished ? null : _save,
                     child: const Text('Tahmini Kaydet'),
                   ),
                 ),
@@ -320,24 +308,34 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
           ),
         ),
 
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
 
         // KAYITLI TAHMİNLER
-        ...widget.store.map(
-          (c) => Card(
-            child: ListTile(
-              leading: const Icon(Icons.person),
-              title: Text(c.playerName),
-              subtitle: Text(
-                'Maç: ${c.matchId} • Tahmin: ${c.points} sayı · ${c.assists} ast · ${c.rebounds} rib',
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () => _remove(c),
+        Text('Tahminlerim', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        if (widget.store.isEmpty)
+          const Text(
+            'Henüz tahmin yok.',
+            style: TextStyle(color: Colors.white70),
+          )
+        else
+          ...widget.store.map(
+            (c) => Card(
+              child: ListTile(
+                title: Text(
+                  c.playerName,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  'Maç: ${c.matchId} • Tahmin: ${c.points} sayı · ${c.assists} ast · ${c.rebounds} rib',
+                ),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () => _remove(c),
+                ),
               ),
             ),
           ),
-        ),
       ],
     );
   }

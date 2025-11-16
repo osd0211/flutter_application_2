@@ -16,15 +16,14 @@ class DataSource {
 
   static const String _assetsPrefix = 'assets/euroleague/';
 
-
-    /// ScoresScreen gibi yerlerde gün listesini çekmek için public wrapper.
-  Future<List<String>> listAllCsvAssets() {
-    return _listAllCsvAssets();
-  }
-
   // ---------------------------------------------------------------------------
   // Asset helper'ları
   // ---------------------------------------------------------------------------
+
+  /// ScoresScreen gibi yerlerde gün listesini çekmek için public wrapper.
+  Future<List<String>> listAllCsvAssets() {
+    return _listAllCsvAssets();
+  }
 
   /// AssetManifest.json içinden EuroLeague CSV dosyalarını listeler.
   Future<List<String>> _listAllCsvAssets() async {
@@ -88,21 +87,47 @@ class DataSource {
     return null;
   }
 
+  /// Bir satırı, tırnak içindeki virgülleri bozmadan CSV alanlarına böler.
+  List<String> _parseCsvLine(String line) {
+    final result = <String>[];
+    final buffer = StringBuffer();
+    var inQuotes = false;
+
+    for (var i = 0; i < line.length; i++) {
+      final c = line[i];
+
+      if (c == '"') {
+        inQuotes = !inQuotes;
+        buffer.write(c); // tırnağı da koruyoruz, sonra temizleriz
+      } else if (c == ',' && !inQuotes) {
+        result.add(buffer.toString());
+        buffer.clear();
+      } else {
+        buffer.write(c);
+      }
+    }
+
+    result.add(buffer.toString());
+    return result;
+  }
+
   /// CSV dosyasını okuyup {kolonAdı: değer} map'lerinden oluşan liste döner.
   Future<List<Map<String, String>>> _loadCsvRows(String assetPath) async {
     final csv = await rootBundle.loadString(assetPath);
     final lines = const LineSplitter().convert(csv);
     if (lines.isEmpty) return const <Map<String, String>>[];
 
-    final headers = lines.first.split(',');
+    final headers = _parseCsvLine(lines.first);
     final rows = <Map<String, String>>[];
 
-    for (final line in lines.skip(1)) {
-      if (line.trim().isEmpty) continue;
+    for (final rawLine in lines.skip(1)) {
+      final line = rawLine.trim();
+      if (line.isEmpty) continue;
 
-      final values = line.split(',');
+      final values = _parseCsvLine(line);
       final row = <String, String>{};
-      final len = values.length < headers.length ? values.length : headers.length;
+      final len =
+          values.length < headers.length ? values.length : headers.length;
 
       for (var i = 0; i < len; i++) {
         row[headers[i]] = values[i];
@@ -115,10 +140,20 @@ class DataSource {
   }
 
   // ---------------------------------------------------------------------------
-  // PUBLIC API – GameRepository buradaki 3 metodu kullanıyor
+  // Yardımcı: gerçek oyuncu mu, takım satırı mı?
   // ---------------------------------------------------------------------------
 
-  /// Verilen gün için: {playerId -> PlayerStat}
+  bool _isRealPlayerId(String id) {
+    // EuroLeague CSV'de oyuncular P ile başlıyor (P00xxxx),
+    // IST / TEL / BAR gibi takım kodlarını elemek için kullanıyoruz.
+    return id.startsWith('P');
+  }
+
+  // ---------------------------------------------------------------------------
+  // PUBLIC API – GameRepository buradaki metodları kullanıyor
+  // ---------------------------------------------------------------------------
+
+    /// Verilen gün için: {playerId -> PlayerStat}
   Future<Map<String, PlayerStat>> loadBoxscoreFor(DateTime day) async {
     final pathForDay = await _findCsvForDay(day);
     if (pathForDay == null) return <String, PlayerStat>{};
@@ -129,6 +164,10 @@ class DataSource {
     for (final row in rows) {
       final playerId = row['player_id'] ?? '';
       if (playerId.isEmpty) continue;
+      if (!_isRealPlayerId(playerId)) continue; // takım satırlarını atla
+
+      // 🔥 Aynı oyuncu zaten eklendiyse, tekrar ekleme (CSV’de duplicate var)
+      if (result.containsKey(playerId)) continue;
 
       final pts = int.tryParse(row['pts'] ?? '') ?? 0;
       final ast = int.tryParse(row['ast'] ?? '') ?? 0;
@@ -140,6 +179,7 @@ class DataSource {
     return result;
   }
 
+
   /// Verilen gün için: {playerId -> Player}
   Future<Map<String, Player>> loadPlayersMapFor(DateTime day) async {
     final pathForDay = await _findCsvForDay(day);
@@ -149,27 +189,29 @@ class DataSource {
     final result = <String, Player>{};
 
     for (final row in rows) {
-  final playerId = row['player_id'] ?? '';
-  var name = row['player_name'] ?? '';
-  if (playerId.isEmpty || name.isEmpty) continue;
+      final playerId = row['player_id'] ?? '';
+      var name = row['player_name'] ?? '';
+      if (playerId.isEmpty || name.isEmpty) continue;
+      if (!_isRealPlayerId(playerId)) continue; // takım kodlarını atla
 
-  // Baş ve sondaki tırnak/boşlukları temizle
-  name = name.trim();
-  if (name.startsWith('"') && name.endsWith('"') && name.length > 1) {
-    name = name.substring(1, name.length - 1).trim();
-  }
+      // Baş ve sondaki tırnak/boşlukları temizle
+      name = name.trim();
+      if (name.startsWith('"') && name.endsWith('"') && name.length > 1) {
+        name = name.substring(1, name.length - 1).trim();
+      }
 
-  final team =
-      row['player_team_name'] ?? row['team_name'] ?? row['team'] ?? '';
+      // Bu CSV'de takım alanı yok gibi; yine de varsa oku:
+      final team =
+          row['player_team_name'] ?? row['team_name'] ?? row['team'] ?? '';
 
-  result[playerId] = Player(id: playerId, name: name, team: team);
-}
-
+      result[playerId] = Player(id: playerId, name: name, team: team);
+    }
 
     return result;
   }
 
   /// Verilen gün için maç skorları listesi.
+  /// Skoru header'dan değil, oyuncu sayılarını toplayarak hesaplıyoruz.
   Future<List<MatchScore>> loadMatchScoresFor(DateTime day) async {
     final pathForDay = await _findCsvForDay(day);
     if (pathForDay == null) return const <MatchScore>[];
@@ -183,26 +225,41 @@ class DataSource {
       final gameId = row['game_id'] ?? '';
       if (gameId.isEmpty) continue;
 
-      final map = byGame.putIfAbsent(gameId, () => <String, dynamic>{});
+      final map = byGame.putIfAbsent(gameId, () => <String, dynamic>{
+            'homePts': 0,
+            'awayPts': 0,
+          });
 
       // ev / deplasman takım isimleri
-      map['home'] ??=
+      final homeName =
           row['home_team_name'] ?? row['home'] ?? row['team_a'] ?? '';
-      map['away'] ??=
+      final awayName =
           row['away_team_name'] ?? row['away'] ?? row['team_b'] ?? '';
 
-      // skorlar
-      final homeScoreStr = row['home_score'] ?? row['score_a'];
-      final awayScoreStr = row['away_score'] ?? row['score_b'];
+      if (homeName.isNotEmpty) map['home'] = homeName;
+      if (awayName.isNotEmpty) map['away'] = awayName;
 
-      if (homeScoreStr != null && homeScoreStr.isNotEmpty) {
-        map['homePts'] = int.tryParse(homeScoreStr) ?? map['homePts'] ?? 0;
-      }
-      if (awayScoreStr != null && awayScoreStr.isNotEmpty) {
-        map['awayPts'] = int.tryParse(awayScoreStr) ?? map['awayPts'] ?? 0;
+      // CSV'de maç skorları zaten var: home_score / away_score
+      final homeScoreStr = row['home_score'] ?? '';
+      final awayScoreStr = row['away_score'] ?? '';
+
+      // "96.0" gibi değerler için önce direkt parse dene, olmazsa '.' öncesini al
+      final homeScore =
+          int.tryParse(homeScoreStr) ??
+          int.tryParse(homeScoreStr.split('.').first) ??
+          0;
+      final awayScore =
+          int.tryParse(awayScoreStr) ??
+          int.tryParse(awayScoreStr.split('.').first) ??
+          0;
+
+      // Bu satırda skor bilgisi varsa map'e yaz
+      if (homeScore != 0 || awayScore != 0) {
+        map['homePts'] = homeScore;
+        map['awayPts'] = awayScore;
       }
 
-      // tipoff: tarih + saat
+      // tipoff: tarih + saat (varsa)
       if (map['tipoff'] == null) {
         final dateStr = row['game_date'];
         final timeStr = row['game_time'];
@@ -210,7 +267,6 @@ class DataSource {
         DateTime tipoff;
 
         if (dateStr != null && dateStr.isNotEmpty) {
-          // tarih parçala (YYYY-MM-DD ya da DD-MM-YYYY)
           final dParts = dateStr.split(RegExp(r'[-./]'));
           if (dParts.length == 3) {
             int year, month, dayNum;
@@ -224,7 +280,6 @@ class DataSource {
               year = int.parse(dParts[2]);
             }
 
-            // saat parçala
             int hour = 0;
             int minute = 0;
             if (timeStr != null && timeStr.isNotEmpty) {
@@ -270,5 +325,26 @@ class DataSource {
 
     list.sort((a, b) => a.tipoff.compareTo(b.tipoff));
     return list;
+  }
+
+  /// Her maç için hangi oyuncular oynadı: {gameId -> {playerId,...}}
+  Future<Map<String, Set<String>>> loadGamePlayersFor(DateTime day) async {
+    final pathForDay = await _findCsvForDay(day);
+    if (pathForDay == null) return const {};
+
+    final rows = await _loadCsvRows(pathForDay);
+    final result = <String, Set<String>>{};
+
+    for (final row in rows) {
+      final gameId = row['game_id'] ?? '';
+      final playerId = row['player_id'] ?? '';
+      if (gameId.isEmpty || playerId.isEmpty) continue;
+      if (!_isRealPlayerId(playerId)) continue; // takım kodlarını atla
+
+      final set = result.putIfAbsent(gameId, () => <String>{});
+      set.add(playerId);
+    }
+
+    return result;
   }
 }

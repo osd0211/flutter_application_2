@@ -69,7 +69,7 @@ class AuthGate extends StatelessWidget {
 }
 
 class _HomeShell extends StatefulWidget {
-  const _HomeShell({super.key});
+  const _HomeShell();
 
   @override
   State<_HomeShell> createState() => _HomeShellState();

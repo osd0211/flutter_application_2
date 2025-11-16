@@ -1,4 +1,11 @@
-// lib/models.dart
+
+// Maç simülasyon aşaması (global)
+enum SimulationPhase {
+  notStarted, // Maç başlamadı → skorlar/istatistikler 0, tahmin yapılabilir
+  finished,   // Maç bitti → gerçek skor, tahmin yapılamaz
+}
+
+
 
 /// Basit Oyuncu modeli
 class Player {
