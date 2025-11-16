@@ -79,6 +79,72 @@ class PlayerStat {
   final int reb;
   const PlayerStat({this.pts = 0, this.ast = 0, this.reb = 0});
 }
+
+// lib/models.dart
+
+int _scoreSingleStat({
+  required int predicted,
+  required int actual,
+  required int baseScore,
+  required int tightDiff,
+  required int mediumDiff,
+}) {
+  final diff = (predicted - actual).abs();
+
+  double multiplier;
+  if (diff == 0) {
+    multiplier = 3.0;
+  } else if (diff <= tightDiff) {
+    multiplier = 2.0;
+  } else if (diff <= mediumDiff) {
+    multiplier = 1.0;
+  } else {
+    multiplier = 0.0;
+  }
+
+  return (baseScore * multiplier).round();
+}
+
+int scoreChallengeWithBoxscore(
+  PredictionChallenge c,
+  PlayerStat? stat,
+) {
+  if (stat == null) return 0;
+
+  final ptsScore = _scoreSingleStat(
+    predicted: c.points,
+    actual: stat.pts,
+    baseScore: 10,
+    tightDiff: 2,
+    mediumDiff: 5,
+  );
+
+  final astScore = _scoreSingleStat(
+    predicted: c.assists,
+    actual: stat.ast,
+    baseScore: 8,
+    tightDiff: 1,
+    mediumDiff: 3,
+  );
+
+  final rebScore = _scoreSingleStat(
+    predicted: c.rebounds,
+    actual: stat.reb,
+    baseScore: 8,
+    tightDiff: 1,
+    mediumDiff: 3,
+  );
+
+  return ptsScore + astScore + rebScore;
+}
+
+
+
+
+
+
+
+
 /// Bir maç için toplam skorlar (CSV'den hesaplanır)
 class MatchScore {
   final String gameId;
