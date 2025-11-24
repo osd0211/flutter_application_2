@@ -1,9 +1,11 @@
+// lib/screens/players_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/game_repository.dart';
 import '../ui/app_theme.dart';
 import '../models.dart';
+import '../services/database_service.dart';
 
 enum PlayerSortBy { points, assists, rebounds }
 
@@ -17,29 +19,65 @@ class PlayersScreen extends StatefulWidget {
 class _PlayersScreenState extends State<PlayersScreen> {
   PlayerSortBy _sortBy = PlayerSortBy.points;
 
+  /// Admin'in seçtiği global gün (settings.current_day_date)
+  DateTime? _adminDay;
+  bool _loadingAdminDay = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAdminDay();
+  }
+
+  Future<void> _loadAdminDay() async {
+    final day = await DatabaseService.loadCurrentDay();
+    if (!mounted) return;
+    setState(() {
+      _adminDay = day;
+      _loadingAdminDay = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final repo = context.watch<GameRepository>();
     final day = repo.selectedDay;
 
-    if (day == null) {
+    if (day == null || _loadingAdminDay) {
       return Center(
         child: CircularProgressIndicator(color: AppColors.accent),
       );
     }
 
-    return _buildPlayers(repo);
+    return _buildPlayers(repo, day);
   }
 
-  Widget _buildPlayers(GameRepository repo) {
-    final stats = repo.boxscoreForSelected();     // {playerId -> PlayerStat}
-    final players = repo.playersForSelected();    // {playerId -> Player}
+  Widget _buildPlayers(GameRepository repo, DateTime selectedDay) {
+    final stats = repo.boxscoreForSelected(); // {playerId -> PlayerStat}
+    final players = repo.playersForSelected(); // {playerId -> Player}
     final phase = repo.simulationPhase;
 
+    // Admin günü ile seçili günü kıyaslayalım (date-only bazında)
+    final adminDay = _adminDay;
+    DateTime? adminDateOnly;
+    bool isBeforeAdmin = false;
+    bool isAfterAdmin = false;
+    bool isSameAsAdmin = false;
+
+    final selDateOnly =
+        DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
+
+    if (adminDay != null) {
+      adminDateOnly =
+          DateTime(adminDay.year, adminDay.month, adminDay.day);
+      isBeforeAdmin = selDateOnly.isBefore(adminDateOnly);
+      isAfterAdmin = selDateOnly.isAfter(adminDateOnly);
+      isSameAsAdmin = !isBeforeAdmin && !isAfterAdmin;
+    }
+
     // Sadece gerçek oyuncular: players map'inde karşılığı olan id'ler
-    final entries = stats.entries
-        .where((e) => players[e.key] != null)
-        .toList();
+    final entries =
+        stats.entries.where((e) => players[e.key] != null).toList();
 
     if (entries.isEmpty) {
       return const Center(
@@ -128,18 +166,40 @@ class _PlayersScreenState extends State<PlayersScreen> {
               final s = entries[i].value;
               final player = players[playerId]!;
 
-              // İsim temiz
               final name = player.name.trim();
 
-              // Simülasyon mantığı:
-              // Maç Başlamadı -> tüm istatistikler 0 gözüksün
-              // Maç Bitti -> gerçek değerler
-              final pts =
-                  phase == SimulationPhase.notStarted ? 0 : s.pts;
-              final ast =
-                  phase == SimulationPhase.notStarted ? 0 : s.ast;
-              final reb =
-                  phase == SimulationPhase.notStarted ? 0 : s.reb;
+              // Gösterilecek istatistiği admin günü + phase'e göre belirleyelim
+              int pts;
+              int ast;
+              int reb;
+
+              if (adminDateOnly == null) {
+                // Fallback: eski davranış (sadece phase'e göre)
+                pts = phase == SimulationPhase.notStarted ? 0 : s.pts;
+                ast = phase == SimulationPhase.notStarted ? 0 : s.ast;
+                reb = phase == SimulationPhase.notStarted ? 0 : s.reb;
+              } else if (isBeforeAdmin) {
+                // Admin gününden ÖNCE: her zaman gerçek istatistik
+                pts = s.pts;
+                ast = s.ast;
+                reb = s.reb;
+              } else if (isAfterAdmin) {
+                // Admin gününden SONRA: her zaman 0-0-0
+                pts = 0;
+                ast = 0;
+                reb = 0;
+              } else {
+                // Admin günü: phase'e göre
+                if (phase == SimulationPhase.notStarted) {
+                  pts = 0;
+                  ast = 0;
+                  reb = 0;
+                } else {
+                  pts = s.pts;
+                  ast = s.ast;
+                  reb = s.reb;
+                }
+              }
 
               return ListTile(
                 leading: const CircleAvatar(radius: 18),

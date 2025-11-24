@@ -6,6 +6,8 @@ import '../services/game_repository.dart';
 import '../services/data_source.dart';
 import '../ui/app_theme.dart';
 import '../models.dart';
+import '../services/database_service.dart';
+import '../services/auth_service.dart';
 
 class ScoresScreen extends StatefulWidget {
   const ScoresScreen({super.key});
@@ -18,16 +20,21 @@ class _ScoresScreenState extends State<ScoresScreen> {
   bool _loading = true;
   List<DateTime> _days = <DateTime>[];
 
+  /// Admin'in seçtiği "global" gün (settings.current_day_date)
+  DateTime? _adminDay;
+
   @override
   void initState() {
     super.initState();
-    _loadDays(); // sadece gün listesini getir, seçim YOK
+    _loadDays();
   }
 
+  // CSV dosya isimlerinden günleri çıkar + DB'den admin gününü yükle
   Future<void> _loadDays() async {
     final assets = await DataSource.instance.listAllCsvAssets();
     final re = RegExp(r'boxscores_(\d{4})[-_](\d{2})[-_](\d{2})\.csv$');
     final parsed = <DateTime>[];
+
     for (final p in assets) {
       final m = re.firstMatch(p);
       if (m == null) continue;
@@ -36,12 +43,47 @@ class _ScoresScreenState extends State<ScoresScreen> {
       final d = int.parse(m.group(3)!);
       parsed.add(DateTime(y, mo, d));
     }
-    parsed.sort(); // eski-yeni sıralı dursun
+
+    parsed.sort(); // eski -> yeni
+
+    // DB'de daha önce kaydedilmiş admin günü var mı?
+    final savedDay = await DatabaseService.loadCurrentDay();
+
+    DateTime? dayToSelect;
+
+    if (savedDay != null) {
+      // listede aynı güne sahip bir DateTime bul
+      try {
+        dayToSelect = parsed.firstWhere(
+          (d) =>
+              d.year == savedDay.year &&
+              d.month == savedDay.month &&
+              d.day == savedDay.day,
+        );
+      } catch (_) {
+        dayToSelect = null;
+      }
+    }
+
+    // DB'de yoksa veya listedeki hiçbir günle eşleşmiyorsa: son günü seç
+    if (dayToSelect == null && parsed.isNotEmpty) {
+      dayToSelect = parsed.last;
+      // default olarak DB'ye de yaz
+      await DatabaseService.saveCurrentDay(dayToSelect);
+    }
+
     if (!mounted) return;
+
     setState(() {
       _days = parsed;
       _loading = false;
+      _adminDay = dayToSelect;
     });
+
+    // GameRepository'ye ilk seçili günü yükle (herkes bu günle başlıyor)
+    if (dayToSelect != null && mounted) {
+      await context.read<GameRepository>().selectDay(dayToSelect);
+    }
   }
 
   String _fmt(DateTime d) =>
@@ -52,6 +94,8 @@ class _ScoresScreenState extends State<ScoresScreen> {
     final repo = context.watch<GameRepository>();
     final selected = repo.selectedDay;
     final phase = repo.simulationPhase;
+    final role = context.watch<IAuthService>().currentUserRole;
+    final isAdmin = role == 'admin';
 
     if (_loading) {
       return Center(
@@ -59,7 +103,7 @@ class _ScoresScreenState extends State<ScoresScreen> {
       );
     }
 
-    // Henüz gün seçilmemişse, kullanıcıdan seçmesini iste
+    // Henüz gün seçilmemişse (çok nadir)
     if (selected == null) {
       if (_days.isEmpty) {
         return const Center(
@@ -108,6 +152,14 @@ class _ScoresScreenState extends State<ScoresScreen> {
                 onChanged: (d) async {
                   if (d == null) return;
                   await context.read<GameRepository>().selectDay(d);
+                  if (isAdmin) {
+                    await DatabaseService.saveCurrentDay(d);
+                    if (mounted) {
+                      setState(() {
+                        _adminDay = d;
+                      });
+                    }
+                  }
                 },
               ),
               const SizedBox(height: 8),
@@ -121,7 +173,7 @@ class _ScoresScreenState extends State<ScoresScreen> {
       );
     }
 
-    // Gün seçiliyse maçları göster
+    // Gün seçiliyse maçları getir
     final matches = repo.matchScoresForSelected();
     if (matches.isEmpty) {
       return const Center(
@@ -132,50 +184,141 @@ class _ScoresScreenState extends State<ScoresScreen> {
       );
     }
 
+    // Admin gününü ve seçili günü kıyaslamak için date-only versiyon
+    final DateTime? adminDay = _adminDay;
+    final DateTime selDateOnly =
+        DateTime(selected.year, selected.month, selected.day);
+    DateTime? adminDateOnly;
+    bool isBeforeAdmin = false;
+    bool isAfterAdmin = false;
+
+    if (adminDay != null) {
+      adminDateOnly =
+          DateTime(adminDay.year, adminDay.month, adminDay.day);
+      isBeforeAdmin = selDateOnly.isBefore(adminDateOnly);
+      isAfterAdmin = selDateOnly.isAfter(adminDateOnly);
+    }
+    final bool isSameAsAdmin =
+        adminDateOnly != null && !isBeforeAdmin && !isAfterAdmin;
+
     return Column(
       children: [
-        // Üstte simülasyon aşaması toggle
+        const SizedBox(height: 8),
+
+        // Üstte seçili gün + herkes için gün değiştirme ikonu
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Row(
             children: [
-              const Text(
-                'Simülasyon Aşaması',
-                style: TextStyle(
-                    color: Colors.white70, fontWeight: FontWeight.w500),
+              Text(
+                'Maç günü: ${_fmt(selected)}',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-              const SizedBox(width: 12),
-              ToggleButtons(
-                borderRadius: BorderRadius.circular(12),
-                isSelected: [
-                  phase == SimulationPhase.notStarted,
-                  phase == SimulationPhase.finished,
-                ],
-                constraints:
-                    const BoxConstraints(minHeight: 36, minWidth: 90),
-                onPressed: (index) {
-                  final newPhase = index == 0
-                      ? SimulationPhase.notStarted
-                      : SimulationPhase.finished;
-                  context
-                      .read<GameRepository>()
-                      .setSimulationPhase(newPhase);
+              const Spacer(),
+              IconButton(
+                icon: const Icon(
+                  Icons.calendar_month,
+                  color: Colors.white70,
+                  size: 20,
+                ),
+                tooltip: isAdmin
+                    ? 'Global maç gününü değiştir (admin)'
+                    : 'Günü değiştir (sadece görüntüleme)',
+                onPressed: () async {
+                  final picked = await showModalBottomSheet<DateTime>(
+                    context: context,
+                    backgroundColor: const Color(0xFF0B1A2E),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(16),
+                      ),
+                    ),
+                    builder: (_) => _DayPickerSheet(
+                      days: _days,
+                      fmt: _fmt,
+                      initial: selected,
+                    ),
+                  );
+
+                  if (picked == null) return;
+
+                  await context.read<GameRepository>().selectDay(picked);
+
+                  if (isAdmin) {
+                    await DatabaseService.saveCurrentDay(picked);
+                    if (mounted) {
+                      setState(() {
+                        _adminDay = picked;
+                      });
+                    }
+                  }
                 },
-                children: const [
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Text('Maç Başlamadı'),
-                  ),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Text('Maç Bitti'),
-                  ),
-                ],
               ),
             ],
           ),
         ),
-        const Divider(height: 1, color: Colors.white12),
+        if (isAdmin)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16.0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Not: Global maç gününü sadece admin değiştirir. Kullanıcılar günü sadece görüntülemek için değiştirebilir.',
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ),
+
+        // Simülasyon toggle SADECE ADMIN'de gözüksün
+        if (isAdmin)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                const Text(
+                  'Simülasyon Aşaması',
+                  style: TextStyle(
+                      color: Colors.white70, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(width: 12),
+                ToggleButtons(
+                  borderRadius: BorderRadius.circular(12),
+                  isSelected: [
+                    phase == SimulationPhase.notStarted,
+                    phase == SimulationPhase.finished,
+                  ],
+                  constraints:
+                      const BoxConstraints(minHeight: 36, minWidth: 90),
+                  onPressed: (index) {
+                    final newPhase = index == 0
+                        ? SimulationPhase.notStarted
+                        : SimulationPhase.finished;
+                    context
+                        .read<GameRepository>()
+                        .setSimulationPhase(newPhase);
+                  },
+                  children: const [
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Text('Maç Başlamadı'),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Text('Maç Bitti'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        if (isAdmin)
+          const Divider(height: 1, color: Colors.white12),
 
         // Maç listesi
         Expanded(
@@ -186,13 +329,33 @@ class _ScoresScreenState extends State<ScoresScreen> {
             itemBuilder: (_, i) {
               final m = matches[i];
 
-              // Simülasyon mantığı:
-              // Maç Başlamadı -> 0-0 göster
-              // Maç Bitti -> gerçek skorları göster
-              final homePts =
-                  phase == SimulationPhase.notStarted ? 0 : m.homePts;
-              final awayPts =
-                  phase == SimulationPhase.notStarted ? 0 : m.awayPts;
+              int homePts;
+              int awayPts;
+
+              if (adminDateOnly == null) {
+                // Fallback: eski davranış
+                homePts =
+                    phase == SimulationPhase.notStarted ? 0 : m.homePts;
+                awayPts =
+                    phase == SimulationPhase.notStarted ? 0 : m.awayPts;
+              } else if (isBeforeAdmin) {
+                // Admin gününden ÖNCE: her zaman gerçek skorlar
+                homePts = m.homePts;
+                awayPts = m.awayPts;
+              } else if (isAfterAdmin) {
+                // Admin gününden SONRA: her zaman 0-0
+                homePts = 0;
+                awayPts = 0;
+              } else {
+                // Admin günü: toggle'a göre
+                if (phase == SimulationPhase.notStarted) {
+                  homePts = 0;
+                  awayPts = 0;
+                } else {
+                  homePts = m.homePts;
+                  awayPts = m.awayPts;
+                }
+              }
 
               return ListTile(
                 title: Text(
@@ -205,25 +368,6 @@ class _ScoresScreenState extends State<ScoresScreen> {
                 subtitle: Text(
                   '${m.tipoff.toLocal()}',
                   style: const TextStyle(color: Colors.white70),
-                ),
-                trailing: IconButton(
-                  icon: const Icon(Icons.calendar_month,
-                      color: Colors.white70),
-                  onPressed: () async {
-                    await showModalBottomSheet(
-                      context: context,
-                      backgroundColor: const Color(0xFF0B1A2E),
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(16),
-                        ),
-                      ),
-                      builder: (_) => _DayPickerSheet(
-                        days: _days,
-                        fmt: _fmt,
-                      ),
-                    );
-                  },
                 ),
               );
             },
@@ -241,16 +385,15 @@ class _DayPickerSheet extends StatelessWidget {
   const _DayPickerSheet({
     required this.days,
     required this.fmt,
+    required this.initial,
   });
 
   final List<DateTime> days;
   final String Function(DateTime) fmt;
+  final DateTime initial;
 
   @override
   Widget build(BuildContext context) {
-    final repo = context.watch<GameRepository>();
-    final selected = repo.selectedDay;
-
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -280,10 +423,9 @@ class _DayPickerSheet extends StatelessWidget {
                 itemCount: days.length,
                 itemBuilder: (_, i) {
                   final d = days[i];
-                  final isSel = selected != null &&
-                      d.year == selected.year &&
-                      d.month == selected.month &&
-                      d.day == selected.day;
+                  final isSel = d.year == initial.year &&
+                      d.month == initial.month &&
+                      d.day == initial.day;
                   return ListTile(
                     title: Text(
                       fmt(d),
@@ -296,11 +438,8 @@ class _DayPickerSheet extends StatelessWidget {
                     trailing: isSel
                         ? const Icon(Icons.check, color: Colors.white70)
                         : null,
-                    onTap: () async {
-                      await context.read<GameRepository>().selectDay(d);
-                      if (context.mounted) {
-                        Navigator.of(context).pop();
-                      }
+                    onTap: () {
+                      Navigator.of(context).pop(d);
                     },
                   );
                 },

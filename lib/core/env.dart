@@ -10,8 +10,8 @@ class Env {
   static const String supabaseUrl = '';
   static const String supabaseAnonKey = '';
 
-  /// Mock kimlik doğrulama
-  static final IAuthService auth = AuthServiceMock();
+    /// SQLite tabanlı kimlik doğrulama
+  static final IAuthService auth = AuthServiceDb();
 
   /// Tahmin (prediction) verileri
   static final PredictionRepository predictions = MemoryPredictionRepository();
