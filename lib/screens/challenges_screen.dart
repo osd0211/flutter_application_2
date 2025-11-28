@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 
 import '../models.dart';
 import '../services/game_repository.dart';
+import '../services/auth_service.dart';
+import '../services/database_service.dart';
 
 class ChallengesScreen extends StatefulWidget {
   const ChallengesScreen({
@@ -58,8 +60,9 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
 
   // ---------------------------------------------------------------------------
   // GameRepository'den gerçek maç + oyuncu verisini çek
+  // + o güne ait current user tahminlerini DB'den yükle
   // ---------------------------------------------------------------------------
-  void _reloadFromGameRepository() {
+  void _reloadFromGameRepository() async {
     if (!mounted) return;
 
     final repo = context.read<GameRepository>();
@@ -73,6 +76,8 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
         _players = const [];
         _selectedPlayer = null;
       });
+      // Maç yoksa tahmin listesi de sıfırlansın
+      widget.onChanged(const []);
       return;
     }
 
@@ -112,12 +117,97 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
 
     final initialPlayers = initialGame.roster;
 
+    if (!mounted) return;
     setState(() {
       _games = games;
       _selectedGame = initialGame;
       _players = initialPlayers;
       _selectedPlayer = _players.isNotEmpty ? _players.first : null;
     });
+
+    // Maçlar yüklendikten sonra DB'den current user tahminlerini çek
+    await _loadPredictionsForCurrentUserAndDay();
+  }
+
+  Future<void> _loadPredictionsForCurrentUserAndDay() async {
+    if (!mounted) return;
+
+    final auth = context.read<IAuthService>();
+    final userId = auth.currentUserId;
+    if (userId == null) return;
+    if (_games.isEmpty) {
+      widget.onChanged(const []);
+      return;
+    }
+
+    final gameIds = _games.map((g) => g.id).toSet();
+
+    final rows = await DatabaseService.loadPredictionsForUser(userId);
+
+    final List<PredictionChallenge> list = [];
+
+    for (final row in rows) {
+      final matchId = row['match_id'] as String;
+      if (!gameIds.contains(matchId)) continue; // sadece bugünkü maçlar
+
+      final playerId = row['player_id'] as String;
+      final challengeId = row['challenge_id'] as String;
+      final predPts = (row['pred_pts'] as num).toInt();
+      final predAst = (row['pred_ast'] as num).toInt();
+      final predReb = (row['pred_reb'] as num).toInt();
+      final createdAtStr = row['created_at'] as String;
+      DateTime createdAt;
+      try {
+        createdAt = DateTime.parse(createdAtStr);
+      } catch (_) {
+        createdAt = DateTime.now();
+      }
+
+      // Oyuncu adını bul
+      Player? player;
+      try {
+        final game =
+            _games.firstWhere((g) => g.id == matchId, orElse: () => _games.first);
+        player = game.roster.firstWhere(
+  (p) => p.id == playerId,
+  orElse: () => Player(
+    id: playerId,
+    name: 'Player $playerId',
+    team: 'Unknown',
+  ),
+);
+
+      } catch (_) {
+  player = Player(
+    id: playerId,
+    name: 'Player $playerId',
+    team: 'Unknown',
+  );
+}
+
+
+      list.add(
+        PredictionChallenge(
+          id: challengeId,
+          matchId: matchId,
+          playerId: playerId,
+          playerName: player.name,
+          points: predPts,
+          assists: predAst,
+          rebounds: predReb,
+          createdAt: createdAt,
+        ),
+      );
+    }
+
+    if (!mounted) return;
+
+    // Store'u DB'den gelenle senkronize et
+    widget.store
+      ..clear()
+      ..addAll(list);
+    widget.onChanged(List<PredictionChallenge>.unmodifiable(widget.store));
+    setState(() {});
   }
 
   void _onSelectGame(MatchGame? m) {
@@ -137,10 +227,11 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
   // ---------------------------------------------------------------------------
   // Tahmin kaydet / sil
   // ---------------------------------------------------------------------------
-  void _save() {
+  Future<void> _save() async {
     if (_selectedGame == null || _selectedPlayer == null) return;
 
-    final phase = context.read<GameRepository>().simulationPhase;
+    final repo = context.read<GameRepository>();
+    final phase = repo.simulationPhase;
     // Maç bittiyse tahmin yok
     if (phase == SimulationPhase.finished) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -151,13 +242,27 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
       return;
     }
 
+    final auth = context.read<IAuthService>();
+    final userId = auth.currentUserId;
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tahmin yapmak için giriş yapmalısınız.'),
+        ),
+      );
+      return;
+    }
+
     final p = int.tryParse(_pts.text.trim()) ?? 0;
     final a = int.tryParse(_ast.text.trim()) ?? 0;
     final r = int.tryParse(_reb.text.trim()) ?? 0;
 
+    // Challenge id'sini maç + oyuncu bazlı deterministik yapalım:
+    // Böylece aynı oyuncu aynı maçta tekrar tahmin girerse güncellenmiş olur.
+    final challengeId = '${_selectedGame!.id}_${_selectedPlayer!.id}';
+
     final item = PredictionChallenge(
-      // Basit unique id: zaman damgası
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      id: challengeId,
       matchId: _selectedGame!.id,
       playerId: _selectedPlayer!.id,
       playerName: _selectedPlayer!.name,
@@ -167,8 +272,27 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
       createdAt: DateTime.now(),
     );
 
+    // Önce DB'ye yaz
+    await DatabaseService.upsertPrediction(
+      userId: userId,
+      matchId: item.matchId,
+      playerId: item.playerId,
+      challengeId: item.id,
+      predPts: item.points,
+      predAst: item.assists,
+      predReb: item.rebounds,
+    );
+
+    // Sonra local store'u güncelle (varsa replace, yoksa ekle)
+    final existingIndex =
+        widget.store.indexWhere((e) => e.id == item.id);
+
     setState(() {
-      widget.store.add(item);
+      if (existingIndex >= 0) {
+        widget.store[existingIndex] = item;
+      } else {
+        widget.store.add(item);
+      }
     });
     widget.onChanged(List<PredictionChallenge>.unmodifiable(widget.store));
 
@@ -176,12 +300,25 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
     _ast.clear();
     _reb.clear();
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Tahmin kaydedildi.')),
     );
   }
 
-  void _remove(PredictionChallenge c) {
+  Future<void> _remove(PredictionChallenge c) async {
+    final auth = context.read<IAuthService>();
+    final userId = auth.currentUserId;
+
+    if (userId != null) {
+      final db = await DatabaseService.database;
+      await db.delete(
+        'predictions',
+        where: 'user_id = ? AND challenge_id = ?',
+        whereArgs: [userId, c.id],
+      );
+    }
+
     setState(() {
       widget.store.removeWhere((e) => e.id == c.id);
     });
@@ -327,7 +464,8 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 subtitle: Text(
-                  'Maç: ${c.matchId} • Tahmin: ${c.points} sayı · ${c.assists} ast · ${c.rebounds} rib',
+                  'Maç: ${c.matchId} • Tahmin: '
+                  '${c.points} sayı · ${c.assists} ast · ${c.rebounds} rib',
                 ),
                 trailing: IconButton(
                   icon: const Icon(Icons.delete_outline),

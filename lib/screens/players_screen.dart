@@ -62,8 +62,6 @@ class _PlayersScreenState extends State<PlayersScreen> {
     DateTime? adminDateOnly;
     bool isBeforeAdmin = false;
     bool isAfterAdmin = false;
-    bool isSameAsAdmin = false;
-
     final selDateOnly =
         DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
 
@@ -72,7 +70,7 @@ class _PlayersScreenState extends State<PlayersScreen> {
           DateTime(adminDay.year, adminDay.month, adminDay.day);
       isBeforeAdmin = selDateOnly.isBefore(adminDateOnly);
       isAfterAdmin = selDateOnly.isAfter(adminDateOnly);
-      isSameAsAdmin = !isBeforeAdmin && !isAfterAdmin;
+      
     }
 
     // Sadece gerçek oyuncular: players map'inde karşılığı olan id'ler

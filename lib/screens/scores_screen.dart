@@ -198,8 +198,7 @@ class _ScoresScreenState extends State<ScoresScreen> {
       isBeforeAdmin = selDateOnly.isBefore(adminDateOnly);
       isAfterAdmin = selDateOnly.isAfter(adminDateOnly);
     }
-    final bool isSameAsAdmin =
-        adminDateOnly != null && !isBeforeAdmin && !isAfterAdmin;
+    
 
     return Column(
       children: [

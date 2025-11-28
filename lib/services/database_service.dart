@@ -143,6 +143,121 @@ class DatabaseService {
   }
 
 
+    // ---------------------------------------------------------------------------
+  // PREDICTIONS helper'ları
+  // ---------------------------------------------------------------------------
+
+  /// Kullanıcının bir challenge için tahmini varsa günceller,
+  /// yoksa yeni kayıt oluşturur.
+  static Future<void> upsertPrediction({
+    required int userId,
+    required String matchId,
+    required String playerId,
+    required String challengeId,
+    required int predPts,
+    required int predAst,
+    required int predReb,
+  }) async {
+    final db = await database;
+
+    // Önce bu kullanıcı + challenge için kayıt var mı bak
+    final existing = await db.query(
+      'predictions',
+      where: 'user_id = ? AND challenge_id = ?',
+      whereArgs: [userId, challengeId],
+      limit: 1,
+    );
+
+    final nowIso = DateTime.now().toIso8601String();
+
+    if (existing.isEmpty) {
+      // Yeni tahmin ekle
+      await db.insert('predictions', {
+        'user_id': userId,
+        'match_id': matchId,
+        'player_id': playerId,
+        'challenge_id': challengeId,
+        'pred_pts': predPts,
+        'pred_ast': predAst,
+        'pred_reb': predReb,
+        'points': null,          // henüz puan hesaplanmadı
+        'created_at': nowIso,
+      });
+    } else {
+      // Var olan tahmini güncelle (puanı sıfırla, tekrar hesaplanacak)
+      final id = existing.first['id'] as int;
+      await db.update(
+        'predictions',
+        {
+          'match_id': matchId,
+          'player_id': playerId,
+          'pred_pts': predPts,
+          'pred_ast': predAst,
+          'pred_reb': predReb,
+          'points': null,
+          'created_at': nowIso,
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    }
+  }
+
+  /// Belirli bir kullanıcının tüm tahminlerini döndürür.
+  /// (UI tarafında PredictionChallenge'a map'leriz)
+  static Future<List<Map<String, Object?>>> loadPredictionsForUser(
+      int userId) async {
+    final db = await database;
+    return db.query(
+      'predictions',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+    );
+  }
+
+  /// Belirli bir kullanıcının belirli challenge'ı için puanı kaydeder.
+  static Future<void> updatePredictionPoints({
+    required int userId,
+    required String challengeId,
+    required int points,
+  }) async {
+    final db = await database;
+    await db.update(
+      'predictions',
+      {
+        'points': points,
+      },
+      where: 'user_id = ? AND challenge_id = ?',
+      whereArgs: [userId, challengeId],
+    );
+  }
+
+
+  /// Seçili maçlar için (o günün maçları) TÜM kullanıcıların tahminlerini,
+  /// kullanıcı isim / email bilgileriyle birlikte döndürür.
+  static Future<List<Map<String, Object?>>> loadPredictionsWithUsersForMatches(
+      List<String> matchIds) async {
+    if (matchIds.isEmpty) return [];
+
+    final db = await database;
+
+    // IN (?) kısmı için dinamik placeholder üret
+    final placeholders = List.filled(matchIds.length, '?').join(',');
+
+    final sql = '''
+      SELECT 
+        p.*,
+        u.name  AS user_name,
+        u.email AS user_email
+      FROM predictions p
+      JOIN users u ON u.id = p.user_id
+      WHERE p.match_id IN ($placeholders)
+    ''';
+
+    // matchIds liste olarak whereArgs'e gidiyor
+    return db.rawQuery(sql, matchIds);
+  }
+
 
 
 
