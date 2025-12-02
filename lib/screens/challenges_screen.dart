@@ -224,7 +224,7 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
     });
   }
 
-  // ---------------------------------------------------------------------------
+   // ---------------------------------------------------------------------------
   // Tahmin kaydet / sil
   // ---------------------------------------------------------------------------
   Future<void> _save() async {
@@ -252,6 +252,30 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
       );
       return;
     }
+
+       // ✅ Günlük tahmin limiti: 5
+    if (widget.store.length >= 5) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) {
+          return AlertDialog(
+            title: const Text('Limit Aşıldı'),
+            content: const Text(
+              'Bir günde hesabından en fazla 5 tahmin yapabilirsin.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Tamam'),
+              ),
+            ],
+          );
+        },
+      );
+      return;
+    }
+
 
     final p = int.tryParse(_pts.text.trim()) ?? 0;
     final a = int.tryParse(_ast.text.trim()) ?? 0;
@@ -305,6 +329,7 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
       const SnackBar(content: Text('Tahmin kaydedildi.')),
     );
   }
+
 
   Future<void> _remove(PredictionChallenge c) async {
     final auth = context.read<IAuthService>();

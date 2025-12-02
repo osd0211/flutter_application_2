@@ -258,6 +258,40 @@ class DatabaseService {
     return db.rawQuery(sql, matchIds);
   }
 
+  // ---------------------------------------------------------------------------
+  // USERS helper'ı: yeni kullanıcı oluşturma
+  // ---------------------------------------------------------------------------
+
+  static Future<int> createUser({
+    required String email,
+    required String name,
+    required String password,
+  }) async {
+    final db = await database;
+
+    final normalizedEmail = email.trim().toLowerCase();
+
+    // Check if email already exists
+    final existing = await db.query(
+      'users',
+      where: 'LOWER(email) = ?',
+      whereArgs: [normalizedEmail],
+      limit: 1,
+    );
+
+    if (existing.isNotEmpty) {
+      throw Exception('email-already-exists');
+    }
+
+    final id = await db.insert('users', {
+      'email': normalizedEmail,
+      'name': name.trim(),
+      'password': password, // for demo; production would hash
+      'role': 'user',
+    });
+
+    return id;
+  }
 
 
 

@@ -6,14 +6,16 @@ import 'database_service.dart';
 
 /// Auth servis arayüzü
 abstract class IAuthService {
-  int? get currentUserId;   // DB'deki users.id
+  int? get currentUserId;      // DB'deki users.id
   String? get currentUserRole; // 'admin' / 'user'
 
-  String? get currentUserName;   // eklendi
-  String? get currentUserEmail;  // eklendi
+  String? get currentUserName;
+  String? get currentUserEmail;
 
   Future<void> signIn(String email, String password);
   Future<void> signOut();
+
+  Future<void> signUp(String email, String name, String password);
 }
 
 /// SQLite tabanlı auth servisi
@@ -22,7 +24,6 @@ class AuthServiceDb implements IAuthService {
   String? _role;
   String? _name;
   String? _email;
-
 
   @override
   int? get currentUserId => _userId;
@@ -66,10 +67,20 @@ class AuthServiceDb implements IAuthService {
   Future<void> signOut() async {
     _userId = null;
     _role = null;
+    _name = null;
+    _email = null;
   }
 
+  @override
+  Future<void> signUp(String email, String name, String password) async {
+    // Yeni kullanıcıyı DB'ye ekle
+    await DatabaseService.createUser(
+      email: email,
+      name: name,
+      password: password,
+    );
 
-
-
-  
+    // Kayıttan sonra otomatik giriş yap
+    await signIn(email, password);
+  }
 }
