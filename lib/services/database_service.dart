@@ -12,7 +12,6 @@ class DatabaseService {
   /// DB'ye erişmek için tek nokta
   static Future<Database> get database async {
     if (_db != null) return _db!;
-
     _db = await _initDB();
     return _db!;
   }
@@ -24,21 +23,25 @@ class DatabaseService {
 
     return openDatabase(
       dbPath,
-      version: 1,
+      version: 3, // ✅ 2 -> 3 (xp + level)
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
   /// Uygulama ilk kez açıldığında tablolar burada oluşturulur
   static Future<void> _onCreate(Database db, int version) async {
-    // USERS tablosu
+    // USERS tablosu (✅ username + xp + level)
     await db.execute('''
       CREATE TABLE users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
         password TEXT NOT NULL,
-        role TEXT NOT NULL
+        role TEXT NOT NULL,
+        username TEXT,
+        xp INTEGER NOT NULL DEFAULT 0,
+        level INTEGER NOT NULL DEFAULT 1
       );
     ''');
 
@@ -73,6 +76,9 @@ class DatabaseService {
       'name': 'Admin',
       'password': '123456',
       'role': 'admin',
+      'username': 'admin',
+      'xp': 0,
+      'level': 99, // test için admin yüksek başlat
     });
 
     await db.insert('users', {
@@ -80,6 +86,9 @@ class DatabaseService {
       'name': 'Ömer',
       'password': '123456',
       'role': 'user',
+      'username': null,
+      'xp': 0,
+      'level': 1,
     });
 
     await db.insert('users', {
@@ -87,38 +96,92 @@ class DatabaseService {
       'name': 'Ahmet',
       'password': '123456',
       'role': 'user',
+      'username': null,
+      'xp': 0,
+      'level': 1,
     });
   }
 
-        // ---------------------------------------------------------------------------
+  /// ✅ Migration: eski db'lerde kolonları ekle
+  static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE users ADD COLUMN username TEXT;');
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE users ADD COLUMN xp INTEGER NOT NULL DEFAULT 0;');
+      await db.execute('ALTER TABLE users ADD COLUMN level INTEGER NOT NULL DEFAULT 1;');
+    }
+  }
+
+  /// ✅ Username NULL olanlara otomatik üret (1 kere çağırman yeter)
+  static Future<void> generateUsernamesIfMissing() async {
+    final db = await database;
+
+    final users = await db.query(
+      'users',
+      where: 'username IS NULL',
+    );
+
+    for (final user in users) {
+      final int id = user['id'] as int;
+
+      final String rawName = (user['name'] as String).trim();
+      final String safeName = rawName
+          .toLowerCase()
+          .replaceAll(' ', '')
+          .replaceAll('ö', 'o')
+          .replaceAll('ü', 'u')
+          .replaceAll('ç', 'c')
+          .replaceAll('ş', 's')
+          .replaceAll('ğ', 'g')
+          .replaceAll('ı', 'i');
+
+      final int random = (1000 + (id * 37) % 9000); // deterministic
+      final String username = '${safeName}_$random';
+
+      await db.update(
+        'users',
+        {'username': username},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    }
+  }
+
+  /// 🔍 SADECE TEST İÇİN: users tablosunu yazdırır
+  static Future<void> debugPrintUsers() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT id, name, username, email, role, level, xp FROM users',
+    );
+    for (final r in rows) {
+      print(r);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // SETTINGS helper'ları: current_day_date
   // ---------------------------------------------------------------------------
 
   static const String _currentDayKey = 'current_day_date';
 
-  /// Tarihi 'YYYY-MM-DD' formatına çeviren yardımcı fonksiyon
   static String _fmtDate(DateTime d) {
     return '${d.year.toString().padLeft(4, '0')}-'
         '${d.month.toString().padLeft(2, '0')}-'
         '${d.day.toString().padLeft(2, '0')}';
   }
 
-  /// Seçili günü DB'ye kaydeder (settings.current_day_date)
   static Future<void> saveCurrentDay(DateTime day) async {
     final db = await database;
     final dateStr = _fmtDate(day);
 
     await db.insert(
       'settings',
-      {
-        'key': _currentDayKey,
-        'value': dateStr,
-      },
+      {'key': _currentDayKey, 'value': dateStr},
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
-  /// DB'den seçili günü okur. Yoksa null döner.
   static Future<DateTime?> loadCurrentDay() async {
     final db = await database;
 
@@ -133,22 +196,17 @@ class DatabaseService {
     if (rows.isEmpty) return null;
 
     final String value = rows.first['value'] as String;
-
     try {
-      // 'YYYY-MM-DD' → DateTime (saat 00:00)
       return DateTime.parse('${value}T00:00:00');
     } catch (_) {
       return null;
     }
   }
 
-
-    // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
   // PREDICTIONS helper'ları
   // ---------------------------------------------------------------------------
 
-  /// Kullanıcının bir challenge için tahmini varsa günceller,
-  /// yoksa yeni kayıt oluşturur.
   static Future<void> upsertPrediction({
     required int userId,
     required String matchId,
@@ -160,7 +218,6 @@ class DatabaseService {
   }) async {
     final db = await database;
 
-    // Önce bu kullanıcı + challenge için kayıt var mı bak
     final existing = await db.query(
       'predictions',
       where: 'user_id = ? AND challenge_id = ?',
@@ -171,7 +228,6 @@ class DatabaseService {
     final nowIso = DateTime.now().toIso8601String();
 
     if (existing.isEmpty) {
-      // Yeni tahmin ekle
       await db.insert('predictions', {
         'user_id': userId,
         'match_id': matchId,
@@ -180,11 +236,10 @@ class DatabaseService {
         'pred_pts': predPts,
         'pred_ast': predAst,
         'pred_reb': predReb,
-        'points': null,          // henüz puan hesaplanmadı
+        'points': null,
         'created_at': nowIso,
       });
     } else {
-      // Var olan tahmini güncelle (puanı sıfırla, tekrar hesaplanacak)
       final id = existing.first['id'] as int;
       await db.update(
         'predictions',
@@ -203,10 +258,7 @@ class DatabaseService {
     }
   }
 
-  /// Belirli bir kullanıcının tüm tahminlerini döndürür.
-  /// (UI tarafında PredictionChallenge'a map'leriz)
-  static Future<List<Map<String, Object?>>> loadPredictionsForUser(
-      int userId) async {
+  static Future<List<Map<String, Object?>>> loadPredictionsForUser(int userId) async {
     final db = await database;
     return db.query(
       'predictions',
@@ -215,7 +267,6 @@ class DatabaseService {
     );
   }
 
-  /// Belirli bir kullanıcının belirli challenge'ı için puanı kaydeder.
   static Future<void> updatePredictionPoints({
     required int userId,
     required String challengeId,
@@ -224,37 +275,30 @@ class DatabaseService {
     final db = await database;
     await db.update(
       'predictions',
-      {
-        'points': points,
-      },
+      {'points': points},
       where: 'user_id = ? AND challenge_id = ?',
       whereArgs: [userId, challengeId],
     );
   }
 
-
-  /// Seçili maçlar için (o günün maçları) TÜM kullanıcıların tahminlerini,
-  /// kullanıcı isim / email bilgileriyle birlikte döndürür.
   static Future<List<Map<String, Object?>>> loadPredictionsWithUsersForMatches(
       List<String> matchIds) async {
     if (matchIds.isEmpty) return [];
 
     final db = await database;
-
-    // IN (?) kısmı için dinamik placeholder üret
     final placeholders = List.filled(matchIds.length, '?').join(',');
 
     final sql = '''
       SELECT 
         p.*,
         u.name  AS user_name,
-        u.email AS user_email
+        u.email AS user_email,
+        u.username AS user_username
       FROM predictions p
       JOIN users u ON u.id = p.user_id
       WHERE p.match_id IN ($placeholders)
     ''';
 
-    // matchIds liste olarak whereArgs'e gidiyor
     return db.rawQuery(sql, matchIds);
   }
 
@@ -265,35 +309,119 @@ class DatabaseService {
   static Future<int> createUser({
     required String email,
     required String name,
+    required String username,
     required String password,
   }) async {
     final db = await database;
 
     final normalizedEmail = email.trim().toLowerCase();
+    final normalizedUsername = username.trim().toLowerCase();
 
-    // Check if email already exists
-    final existing = await db.query(
+    // Email kontrolü
+    final existingEmail = await db.query(
       'users',
       where: 'LOWER(email) = ?',
       whereArgs: [normalizedEmail],
       limit: 1,
     );
-
-    if (existing.isNotEmpty) {
+    if (existingEmail.isNotEmpty) {
       throw Exception('email-already-exists');
     }
 
+    // Username kontrolü
+    final existingUsername = await db.query(
+      'users',
+      where: 'LOWER(username) = ?',
+      whereArgs: [normalizedUsername],
+      limit: 1,
+    );
+    if (existingUsername.isNotEmpty) {
+      throw Exception('username-already-exists');
+    }
+
+    // Insert
     final id = await db.insert('users', {
       'email': normalizedEmail,
       'name': name.trim(),
-      'password': password, // for demo; production would hash
+      'username': normalizedUsername,
+      'password': password,
       'role': 'user',
+      'xp': 0,
+      'level': 1,
     });
 
     return id;
   }
 
+  // ---------------------------------------------------------------------------
+  // ADMIN HELPERS (test için)
+  // ---------------------------------------------------------------------------
 
+  static Future<List<Map<String, Object?>>> adminLoadAllUsers() async {
+    final db = await database;
+    return db.query(
+      'users',
+      columns: ['id', 'name', 'email', 'role', 'username', 'level', 'xp'],
+      orderBy: 'id ASC',
+    );
+  }
 
+  static Future<void> adminUpdateUsername({
+    required int userId,
+    required String newUsername,
+  }) async {
+    final db = await database;
 
+    final normalized = newUsername.trim().toLowerCase();
+    if (normalized.isEmpty) throw Exception('username-empty');
+
+    final existing = await db.query(
+      'users',
+      columns: ['id'],
+      where: 'LOWER(username) = ? AND id != ?',
+      whereArgs: [normalized, userId],
+      limit: 1,
+    );
+
+    if (existing.isNotEmpty) {
+      throw Exception('username-already-exists');
+    }
+
+    await db.update(
+      'users',
+      {'username': normalized},
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+  }
+
+  static Future<void> adminSetLevel({
+    required int userId,
+    required int level,
+  }) async {
+    final db = await database;
+    final safeLevel = level < 1 ? 1 : level;
+
+    await db.update(
+      'users',
+      {'level': safeLevel},
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+  }
+
+  static Future<void> adminSetXp({
+    required int userId,
+    required int xp,
+  }) async {
+    final db = await database;
+    final safeXp = xp < 0 ? 0 : xp;
+
+    await db.update(
+      'users',
+      {'xp': safeXp},
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+  }
 }

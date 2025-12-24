@@ -14,9 +14,18 @@ import 'screens/players_screen.dart';
 import 'screens/challenges_screen.dart';
 import 'screens/leaderboard_screen.dart';
 import 'screens/auth/login_screen.dart';
+import 'services/database_service.dart';
+import 'screens/profile_screen.dart';
+
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+
+  await DatabaseService.generateUsernamesIfMissing();
+  await DatabaseService.debugPrintUsers(); // 👈 SADECE TEST
+
 
   // Opsiyonel: gerçek auth kullanacaksan aktif bırak.
   if (Env.useSupabaseAuth) {
@@ -25,6 +34,7 @@ Future<void> main() async {
       anonKey: Env.supabaseAnonKey,
     );
   }
+await DatabaseService.generateUsernamesIfMissing();
 
   runApp(const EuroScoreApp());
 }
@@ -116,6 +126,8 @@ class _HomeShellState extends State<_HomeShell> {
 
       // Liderlik ekranı – ValueListenable bekler
       LeaderboardScreen(challenges: _challengesVN),
+
+      const ProfileScreen(), // ✅ yeni
     ];
   }
 
@@ -148,6 +160,8 @@ class _HomeShellState extends State<_HomeShell> {
           NavigationDestination(icon: Icon(Icons.group), label: 'Oyuncular'),
           NavigationDestination(icon: Icon(Icons.event), label: 'Tahmin'),
           NavigationDestination(icon: Icon(Icons.leaderboard), label: 'Liderlik'),
+          NavigationDestination(icon: Icon(Icons.person), label: 'Profil'),
+
         ],
       ),
     );

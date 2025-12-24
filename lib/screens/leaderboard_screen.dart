@@ -99,6 +99,7 @@ int _scoreChallengeWithBoxscore(
 class _UserChallengeScore {
   final int userId;
   final String userName;
+  final String? userUsername; 
   final String? userEmail;
   final bool isCurrentUser;
   final PredictionChallenge challenge;
@@ -107,14 +108,22 @@ class _UserChallengeScore {
   _UserChallengeScore({
     required this.userId,
     required this.userName,
+     required this.userUsername,
     required this.userEmail,
     required this.isCurrentUser,
     required this.challenge,
     required this.score,
   });
 
-  String get label =>
-      userName.isNotEmpty ? userName : (userEmail ?? 'User $userId');
+  String get label {
+    final u = (userUsername ?? '').trim();
+    if (u.isNotEmpty) return '@$u';
+
+    final n = userName.trim();
+    if (n.isNotEmpty) return n;
+
+    return userEmail ?? 'User $userId';
+  }
 }
 
 /// Seçili günün maçları için tüm user'ların tahminlerini + skorlarını yükler
@@ -140,6 +149,7 @@ Future<List<_UserChallengeScore>> _loadScoresForSelectedDay(
   for (final row in rows) {
     final int userId = row['user_id'] as int;
     final String userName = (row['user_name'] as String?) ?? '';
+    final String? userUsername = row['user_username'] as String?;
     final String? userEmail = row['user_email'] as String?;
 
     final String matchId = row['match_id'] as String;
@@ -183,6 +193,7 @@ Future<List<_UserChallengeScore>> _loadScoresForSelectedDay(
       _UserChallengeScore(
         userId: userId,
         userName: userName,
+        userUsername: userUsername,
         userEmail: userEmail,
         isCurrentUser: currentUserId != null && userId == currentUserId,
         challenge: challenge,

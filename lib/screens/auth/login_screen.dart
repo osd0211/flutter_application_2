@@ -13,25 +13,25 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _mail = TextEditingController();
+  final _identifier = TextEditingController(); // email veya username
   final _pass = TextEditingController();
   bool _busy = false;
   String? _error;
 
   @override
   void dispose() {
-    _mail.dispose();
+    _identifier.dispose();
     _pass.dispose();
     super.dispose();
   }
 
   Future<void> _doLogin() async {
-    final email = _mail.text.trim();
+    final id = _identifier.text.trim();
     final pass = _pass.text;
 
-    if (email.isEmpty || pass.isEmpty) {
+    if (id.isEmpty || pass.isEmpty) {
       setState(() {
-        _error = 'E-posta ve şifre boş olamaz.';
+        _error = 'E-posta/kullanıcı adı ve şifre boş olamaz.';
       });
       return;
     }
@@ -43,16 +43,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final auth = context.read<IAuthService>();
-      await auth.signIn(email, pass);
+      await auth.signIn(id, pass); // ✅ email veya username
 
       if (!mounted) return;
 
-      // Başarılı login → home'a geç, login stackten sil
       Navigator.of(context).pushNamedAndRemoveUntil('/home', (_) => false);
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'E-posta veya şifre hatalı.';
+        _error = 'E-posta/kullanıcı adı veya şifre hatalı.';
       });
     } finally {
       if (mounted) {
@@ -88,14 +87,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: theme.textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 24),
+
                 TextField(
-                  controller: _mail,
-                  keyboardType: TextInputType.emailAddress,
+                  controller: _identifier,
+                  keyboardType: TextInputType.text,
                   decoration: const InputDecoration(
-                    labelText: 'E-posta',
-                    prefixIcon: Icon(Icons.mail_outline),
+                    labelText: 'E-posta veya kullanıcı adı',
+                    prefixIcon: Icon(Icons.person_outline),
                   ),
                 ),
+
                 const SizedBox(height: 12),
                 TextField(
                   controller: _pass,
@@ -106,6 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
+
                 if (_error != null) ...[
                   Text(
                     _error!,
@@ -113,16 +115,19 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 8),
                 ],
+
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Demo hesaplar:\n'
                     '• admin@euroscore.app / 123456 (admin)\n'
                     '• omer@euroscore.app / 123456\n'
-                    '• ahmet@euroscore.app / 123456',
+                    '• ahmet@euroscore.app / 123456\n'
+                    'Not: İstersen kullanıcı adıyla da giriş yapabilirsin.',
                     style: theme.textTheme.bodySmall,
                   ),
                 ),
+
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: _busy ? null : _doLogin,

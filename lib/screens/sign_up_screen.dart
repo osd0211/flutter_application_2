@@ -15,6 +15,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _formKey = GlobalKey<FormState>();
 
   final _nameCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _pass2Ctrl = TextEditingController();
@@ -24,6 +25,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _usernameCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
     _pass2Ctrl.dispose();
@@ -38,20 +40,25 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     final auth = context.read<IAuthService>();
     final name = _nameCtrl.text.trim();
+    final username = _usernameCtrl.text.trim();
     final email = _emailCtrl.text.trim();
     final pass = _passCtrl.text;
 
     try {
-      await auth.signUp(email, name, pass);
+      // ✅ signUp imzasını birazdan değiştireceğiz:
+      // signUp(email, name, username, pass)
+      await auth.signUp(email, name, username, pass);
 
       if (!mounted) return;
-      Navigator.of(context).pop(); // geri dön (artık login)
+      Navigator.of(context).pop(); // geri dön (login)
     } catch (e) {
       setState(() => _submitting = false);
 
       final msg = e.toString().contains('email-already-exists')
           ? 'Bu email ile zaten bir hesap var.'
-          : 'Kayıt olurken bir hata oluştu.';
+          : e.toString().contains('username-already-exists')
+              ? 'Bu kullanıcı adı alınmış.'
+              : 'Kayıt olurken bir hata oluştu.';
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -87,6 +94,29 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   return null;
                 },
               ),
+              const SizedBox(height: 12),
+
+              // ✅ YENİ: USERNAME
+              TextFormField(
+                controller: _usernameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Kullanıcı adı',
+                  hintText: 'ornek: omer_123',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) {
+                  final value = v?.trim() ?? '';
+                  if (value.isEmpty) return 'Kullanıcı adı boş olamaz';
+                  if (value.length < 3) return 'En az 3 karakter olmalı';
+
+                  // sadece harf/rakam/_/.
+                  final ok = RegExp(r'^[a-zA-Z0-9_.]+$').hasMatch(value);
+                  if (!ok) return 'Sadece harf, rakam, _ ve . kullan';
+
+                  return null;
+                },
+              ),
+
               const SizedBox(height: 12),
               TextFormField(
                 controller: _emailCtrl,
