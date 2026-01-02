@@ -23,15 +23,40 @@ class DatabaseService {
 
     return openDatabase(
       dbPath,
-      version: 3, // ✅ 2 -> 3 (xp + level)
+      version: 5, // ✅ artırdık (migration fix)
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
   }
 
+  // ------------------------------------------------------------
+  // ✅ Helpers: column var mı?
+  // ------------------------------------------------------------
+  static Future<bool> _hasColumn(Database db, String table, String column) async {
+    final rows = await db.rawQuery('PRAGMA table_info($table)');
+    for (final r in rows) {
+      if ((r['name'] as String).toLowerCase() == column.toLowerCase()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static Future<void> _addColumnIfMissing(
+    Database db,
+    String table,
+    String column,
+    String typeSql,
+  ) async {
+    final exists = await _hasColumn(db, table, column);
+    if (!exists) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $typeSql;');
+    }
+  }
+
   /// Uygulama ilk kez açıldığında tablolar burada oluşturulur
   static Future<void> _onCreate(Database db, int version) async {
-    // USERS tablosu (✅ username + xp + level)
+    // USERS tablosu
     await db.execute('''
       CREATE TABLE users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,6 +65,10 @@ class DatabaseService {
         password TEXT NOT NULL,
         role TEXT NOT NULL,
         username TEXT,
+        favorite_team_code TEXT,
+        favorite_team_name TEXT,
+        favorite_player_id TEXT,
+        favorite_player_name TEXT,
         xp INTEGER NOT NULL DEFAULT 0,
         level INTEGER NOT NULL DEFAULT 1
       );
@@ -78,7 +107,7 @@ class DatabaseService {
       'role': 'admin',
       'username': 'admin',
       'xp': 0,
-      'level': 99, // test için admin yüksek başlat
+      'level': 99,
     });
 
     await db.insert('users', {
@@ -102,15 +131,16 @@ class DatabaseService {
     });
   }
 
-  /// ✅ Migration: eski db'lerde kolonları ekle
+  /// ✅ Migration: eski db'lerde kolonları güvenli ekle
   static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      await db.execute('ALTER TABLE users ADD COLUMN username TEXT;');
-    }
-    if (oldVersion < 3) {
-      await db.execute('ALTER TABLE users ADD COLUMN xp INTEGER NOT NULL DEFAULT 0;');
-      await db.execute('ALTER TABLE users ADD COLUMN level INTEGER NOT NULL DEFAULT 1;');
-    }
+    // En güvenlisi: version’a bakmadan kolonları "varsa geç" mantığıyla eklemek
+    await _addColumnIfMissing(db, 'users', 'username', 'TEXT');
+    await _addColumnIfMissing(db, 'users', 'xp', 'INTEGER NOT NULL DEFAULT 0');
+    await _addColumnIfMissing(db, 'users', 'level', 'INTEGER NOT NULL DEFAULT 1');
+    await _addColumnIfMissing(db, 'users', 'favorite_team_code', 'TEXT');
+    await _addColumnIfMissing(db, 'users', 'favorite_team_name', 'TEXT');
+    await _addColumnIfMissing(db, 'users', 'favorite_player_id', 'TEXT');
+    await _addColumnIfMissing(db, 'users', 'favorite_player_name', 'TEXT');
   }
 
   /// ✅ Username NULL olanlara otomatik üret (1 kere çağırman yeter)
@@ -152,9 +182,10 @@ class DatabaseService {
   static Future<void> debugPrintUsers() async {
     final db = await database;
     final rows = await db.rawQuery(
-      'SELECT id, name, username, email, role, level, xp FROM users',
+      'SELECT id, name, username, email, role, level, xp, favorite_team_code, favorite_team_name, favorite_player_id, favorite_player_name FROM users',
     );
     for (final r in rows) {
+      // ignore: avoid_print
       print(r);
     }
   }
@@ -282,7 +313,8 @@ class DatabaseService {
   }
 
   static Future<List<Map<String, Object?>>> loadPredictionsWithUsersForMatches(
-      List<String> matchIds) async {
+    List<String> matchIds,
+  ) async {
     if (matchIds.isEmpty) return [];
 
     final db = await database;
@@ -317,7 +349,6 @@ class DatabaseService {
     final normalizedEmail = email.trim().toLowerCase();
     final normalizedUsername = username.trim().toLowerCase();
 
-    // Email kontrolü
     final existingEmail = await db.query(
       'users',
       where: 'LOWER(email) = ?',
@@ -328,7 +359,6 @@ class DatabaseService {
       throw Exception('email-already-exists');
     }
 
-    // Username kontrolü
     final existingUsername = await db.query(
       'users',
       where: 'LOWER(username) = ?',
@@ -339,7 +369,6 @@ class DatabaseService {
       throw Exception('username-already-exists');
     }
 
-    // Insert
     final id = await db.insert('users', {
       'email': normalizedEmail,
       'name': name.trim(),
@@ -361,7 +390,19 @@ class DatabaseService {
     final db = await database;
     return db.query(
       'users',
-      columns: ['id', 'name', 'email', 'role', 'username', 'level', 'xp'],
+      columns: [
+        'id',
+        'name',
+        'email',
+        'role',
+        'username',
+        'level',
+        'xp',
+        'favorite_team_code',
+        'favorite_team_name',
+        'favorite_player_id',
+        'favorite_player_name',
+      ],
       orderBy: 'id ASC',
     );
   }
@@ -420,6 +461,65 @@ class DatabaseService {
     await db.update(
       'users',
       {'xp': safeXp},
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // ✅ Profil için user çek
+  // ---------------------------------------------------------------------------
+  static Future<Map<String, Object?>?> getUserById(int userId) async {
+    final db = await database;
+
+    final rows = await db.query(
+      'users',
+      where: 'id = ?',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return null;
+    return rows.first;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ✅ Favori takım kaydet
+  // ---------------------------------------------------------------------------
+  static Future<void> updateFavoriteTeam({
+    required int userId,
+    required String? teamCode,
+    required String? teamName,
+  }) async {
+    final db = await database;
+
+    await db.update(
+      'users',
+      {
+        'favorite_team_code': teamCode,
+        'favorite_team_name': teamName,
+      },
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // ✅ Favori oyuncu kaydet
+  // ---------------------------------------------------------------------------
+  static Future<void> updateFavoritePlayer({
+    required int userId,
+    required String? playerId,
+    required String? playerName,
+  }) async {
+    final db = await database;
+
+    await db.update(
+      'users',
+      {
+        'favorite_player_id': playerId,
+        'favorite_player_name': playerName,
+      },
       where: 'id = ?',
       whereArgs: [userId],
     );

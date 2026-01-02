@@ -23,7 +23,45 @@ class DataSource {
   /// ScoresScreen gibi yerlerde gün listesini çekmek için public wrapper.
   Future<List<String>> listAllCsvAssets() {
     return _listAllCsvAssets();
+    
   }
+
+
+Future<List<String>> loadAllTeamsFromAssets() async {
+  final all = await _listAllCsvAssets();
+
+  final set = <String>{};
+
+  for (final path in all) {
+    final csv = await rootBundle.loadString(path);
+    final lines = const LineSplitter().convert(csv);
+    if (lines.length < 2) continue;
+
+    final headers = _parseCsvLine(lines.first);
+    final homeIdx = headers.indexOf('home_team_name');
+    final awayIdx = headers.indexOf('away_team_name');
+
+    if (homeIdx == -1 && awayIdx == -1) continue;
+
+    // dosyada çok tekrar var, ilk 300 satır yeter (hız için)
+    final takeLines = lines.skip(1).take(300);
+
+    for (final line in takeLines) {
+      final values = _parseCsvLine(line);
+      if (homeIdx != -1 && homeIdx < values.length) {
+        final h = values[homeIdx].replaceAll('"', '').trim();
+        if (h.isNotEmpty) set.add(h);
+      }
+      if (awayIdx != -1 && awayIdx < values.length) {
+        final a = values[awayIdx].replaceAll('"', '').trim();
+        if (a.isNotEmpty) set.add(a);
+      }
+    }
+  }
+
+  final list = set.toList()..sort();
+  return list;
+}
 
   /// AssetManifest.json içinden EuroLeague CSV dosyalarını listeler.
   Future<List<String>> _listAllCsvAssets() async {

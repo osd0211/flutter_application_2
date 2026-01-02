@@ -120,8 +120,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Demo hesaplar:\n'
-                    '• admin@euroscore.app / 123456 (admin)\n'
-                    '• omer@euroscore.app / 123456\n'
+                    '• admin@euroscore.app / admin / 123456 (admin)\n'
+                    '• omer@euroscore.app / osd / 123456\n'
                     '• ahmet@euroscore.app / 123456\n'
                     'Not: İstersen kullanıcı adıyla da giriş yapabilirsin.',
                     style: theme.textTheme.bodySmall,
