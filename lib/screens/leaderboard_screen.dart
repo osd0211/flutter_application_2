@@ -9,10 +9,6 @@ import '../services/game_repository.dart';
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
 
-/// Sabit aralığa göre oransal skor:
-/// diff = |pred - actual|
-/// oran = diff / range (max 1)
-/// skor = (1 - oran) * maxScore
 double _rangeScore({
   required int predicted,
   required int actual,
@@ -20,23 +16,18 @@ double _rangeScore({
   required double range,
 }) {
   final int diff = (predicted - actual).abs();
-
   final double ratio = diff / range;
   final double clamped = ratio > 1.0 ? 1.0 : ratio;
-
   final double score = (1.0 - clamped) * maxScore;
   return score < 0 ? 0 : score;
 }
 
-/// Bir challenge için toplam skor (oran + bonuslar)
 int _scoreChallengeWithBoxscore(
   PredictionChallenge c,
   PlayerStat? stat,
 ) {
   if (stat == null) return 0;
 
-  // ---------- 1) ORANSAL PUANLAR ----------
-  // Sayı: max 60 puan, mantıklı fark aralığı ~40 sayı
   final double ptsBase = _rangeScore(
     predicted: c.points,
     actual: stat.pts,
@@ -44,7 +35,6 @@ int _scoreChallengeWithBoxscore(
     range: 40.0,
   );
 
-  // Asist: max 40 puan, mantıklı fark aralığı ~12 asist
   final double astBase = _rangeScore(
     predicted: c.assists,
     actual: stat.ast,
@@ -52,7 +42,6 @@ int _scoreChallengeWithBoxscore(
     range: 12.0,
   );
 
-  // Ribaund: max 40 puan, mantıklı fark aralığı ~12 ribaund
   final double rebBase = _rangeScore(
     predicted: c.rebounds,
     actual: stat.reb,
@@ -60,31 +49,25 @@ int _scoreChallengeWithBoxscore(
     range: 12.0,
   );
 
-  // ---------- 2) TEK TEK TAM BİLME BONUSLARI ----------
   int bonus = 0;
   int exactCount = 0;
 
   if (c.points == stat.pts) {
-    bonus += 25; // sayı bonusu
+    bonus += 25;
     exactCount++;
   }
-
   if (c.assists == stat.ast) {
-    bonus += 20; // asist bonusu
+    bonus += 20;
     exactCount++;
   }
-
   if (c.rebounds == stat.reb) {
-    bonus += 20; // ribaund bonusu
+    bonus += 20;
     exactCount++;
   }
 
-  // ---------- 3) KOMBO BONUSLARI ----------
   if (exactCount == 2) {
-    // 2 istatistiği tam bilene ekstra
     bonus += 50;
   } else if (exactCount == 3) {
-    // 3'ünü de tam bilene mega bonus
     bonus += 120;
   }
 
@@ -92,14 +75,10 @@ int _scoreChallengeWithBoxscore(
   return total.round();
 }
 
-/// Her tahmin (PredictionChallenge) için:
-/// - hangi user yaptı
-/// - user bilgileri
-/// - hesaplanmış skor
 class _UserChallengeScore {
   final int userId;
   final String userName;
-  final String? userUsername; 
+  final String? userUsername;
   final String? userEmail;
   final bool isCurrentUser;
   final PredictionChallenge challenge;
@@ -108,7 +87,7 @@ class _UserChallengeScore {
   _UserChallengeScore({
     required this.userId,
     required this.userName,
-     required this.userUsername,
+    required this.userUsername,
     required this.userEmail,
     required this.isCurrentUser,
     required this.challenge,
@@ -118,30 +97,36 @@ class _UserChallengeScore {
   String get label {
     final u = (userUsername ?? '').trim();
     if (u.isNotEmpty) return '@$u';
-
     final n = userName.trim();
     if (n.isNotEmpty) return n;
-
     return userEmail ?? 'User $userId';
   }
 }
 
-/// Seçili günün maçları için tüm user'ların tahminlerini + skorlarını yükler
 Future<List<_UserChallengeScore>> _loadScoresForSelectedDay(
   BuildContext context,
 ) async {
   final repo = context.read<GameRepository>();
   final auth = context.read<IAuthService>();
 
-  final box = repo.boxscoreForSelected();       // {playerId -> PlayerStat}
-  final players = repo.playersForSelected();    // {playerId -> Player}
-  final games = repo.matchScoresForSelected();  // seçili günün maçları
+  final phase = repo.simulationPhase;
+  final bool showScores = phase == SimulationPhase.finished;
 
+  final box = repo.boxscoreForSelected(); // {playerId -> PlayerStat}
+  final players = repo.playersForSelected();
+  final games = repo.matchScoresForSelected();
   final matchIds = games.map((g) => g.gameId).toList();
   if (matchIds.isEmpty) return [];
 
-  final rows =
-      await DatabaseService.loadPredictionsWithUsersForMatches(matchIds);
+  // ✅ maç bittiyse: finalize (badge/XP) tek sefer çalışsın
+  if (showScores) {
+    await DatabaseService.finalizeScoresForMatches(
+      matchIds: matchIds,
+      boxscoreByPlayerId: box,
+    );
+  }
+
+  final rows = await DatabaseService.loadPredictionsWithUsersForMatches(matchIds);
   final currentUserId = auth.currentUserId;
 
   final List<_UserChallengeScore> result = [];
@@ -186,8 +171,8 @@ Future<List<_UserChallengeScore>> _loadScoresForSelectedDay(
       createdAt: createdAt,
     );
 
-    final stat = box[playerId];
-    final score = _scoreChallengeWithBoxscore(challenge, stat);
+    final stat = showScores ? box[playerId] : null;
+    final score = showScores ? _scoreChallengeWithBoxscore(challenge, stat) : 0;
 
     result.add(
       _UserChallengeScore(
@@ -211,15 +196,18 @@ class LeaderboardScreen extends StatelessWidget {
     required this.challenges,
   });
 
-  /// Şu an sadece rebuild tetiklemek için kullanıyoruz (kullanıcının
-  /// tahmin sayısı değiştiğinde Future tekrar çalışsın diye)
   final ValueListenable<List<PredictionChallenge>> challenges;
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<List<PredictionChallenge>>(
       valueListenable: challenges,
-      builder: (context, _ignored, __) {
+      builder: (context, value, child) {
+
+        final repo = context.watch<GameRepository>();
+        final phase = repo.simulationPhase;
+        final bool showScores = phase == SimulationPhase.finished;
+
         final auth = context.watch<IAuthService>();
         final isAdmin = auth.currentUserRole == 'admin';
 
@@ -236,12 +224,14 @@ class LeaderboardScreen extends StatelessWidget {
             }
 
             if (!snapshot.hasData || snapshot.data!.isEmpty) {
-              return const Scaffold(
+              return Scaffold(
                 backgroundColor: AppColors.background,
                 body: Center(
                   child: Text(
-                    'Bu gün için henüz tahmin veya puan yok.',
-                    style: TextStyle(color: Colors.white70),
+                    showScores
+                        ? 'Bu gün için henüz tahmin veya puan yok.'
+                        : 'Tahminler alındı. Skorlar maçlar bitince hesaplanacak.',
+                    style: const TextStyle(color: Colors.white70),
                   ),
                 ),
               );
@@ -250,10 +240,10 @@ class LeaderboardScreen extends StatelessWidget {
             final scores = snapshot.data!;
 
             if (isAdmin) {
-              return _buildAdminView(scores);
+              return _buildAdminView(scores, showScores: showScores);
             } else {
               final currentUserId = auth.currentUserId;
-              return _buildUserView(scores, currentUserId);
+              return _buildUserView(scores, currentUserId, showScores: showScores);
             }
           },
         );
@@ -261,16 +251,14 @@ class LeaderboardScreen extends StatelessWidget {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // ADMIN: hem herkesin totalini hem de tek tek tüm tahminleri görsün
-  // ---------------------------------------------------------------------------
-  Widget _buildAdminView(List<_UserChallengeScore> scores) {
+  Widget _buildAdminView(List<_UserChallengeScore> scores, {required bool showScores}) {
     final Map<int, int> totals = {};
     final Map<int, String> labels = {};
     final Map<int, int> counts = {};
 
     for (final s in scores) {
-      totals.update(s.userId, (v) => v + s.score, ifAbsent: () => s.score);
+      totals.update(s.userId, (v) => v + (showScores ? s.score : 0),
+          ifAbsent: () => (showScores ? s.score : 0));
       labels[s.userId] = s.label;
       counts.update(s.userId, (v) => v + 1, ifAbsent: () => 1);
     }
@@ -278,7 +266,6 @@ class LeaderboardScreen extends StatelessWidget {
     final entries = totals.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
-    // Tek tek tahminler: skoruna göre büyükten küçüğe
     final allChallenges = List<_UserChallengeScore>.from(scores)
       ..sort((a, b) => b.score.compareTo(a.score));
 
@@ -287,13 +274,17 @@ class LeaderboardScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 1) Kullanıcı bazlı total leaderboard
+          if (!showScores)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Maçlar bitmeden skorlar gizli. Maç bitince otomatik hesaplanır.',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
           const Text(
             'Kullanıcı Toplam Puanları',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           ...entries.asMap().entries.map((entry) {
@@ -312,16 +303,11 @@ class LeaderboardScreen extends StatelessWidget {
                     foregroundColor: Colors.black,
                     child: Text('$rank'),
                   ),
-                  title: Text(
-                    label,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    'Tahmin sayısı: $count',
-                    style: const TextStyle(color: Colors.white70),
-                  ),
+                  title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text('Tahmin sayısı: $count',
+                      style: const TextStyle(color: Colors.white70)),
                   trailing: Text(
-                    '$total',
+                    showScores ? '$total' : '—',
                     style: const TextStyle(
                       fontWeight: FontWeight.w900,
                       color: AppColors.yellow,
@@ -331,16 +317,10 @@ class LeaderboardScreen extends StatelessWidget {
               ),
             );
           }),
-
           const SizedBox(height: 24),
-
-          // 2) Tek tek tüm tahminler
           const Text(
             'Tüm Tahminler',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           ...allChallenges.map(
@@ -348,10 +328,7 @@ class LeaderboardScreen extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 8.0),
               child: Card(
                 child: ListTile(
-                  title: Text(
-                    s.label,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
+                  title: Text(s.label, style: const TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text(
                     '${s.challenge.playerName}\n'
                     'Tahmin: ${s.challenge.points} sayı · '
@@ -360,7 +337,7 @@ class LeaderboardScreen extends StatelessWidget {
                     style: const TextStyle(color: Colors.white70),
                   ),
                   trailing: Text(
-                    '${s.score}',
+                    showScores ? '${s.score}' : '—',
                     style: const TextStyle(
                       fontWeight: FontWeight.w900,
                       color: AppColors.yellow,
@@ -375,27 +352,19 @@ class LeaderboardScreen extends StatelessWidget {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // NORMAL USER:
-  // - kendi totalini
-  // - herkesin totalini (genel sıralama)
-  // - kendi tahminleri
-  // - aynı oyuncuya tahmin yapanlar
-  // görsün
-  // ---------------------------------------------------------------------------
   Widget _buildUserView(
     List<_UserChallengeScore> scores,
-    int? currentUserId,
-  ) {
-    // Senin tahminlerin
+    int? currentUserId, {
+    required bool showScores,
+  }) {
     final myScores = scores.where((s) => s.isCurrentUser).toList();
 
-    // Kullanıcı bazlı toplamlar (herkes için)
     final Map<int, int> totals = {};
     final Map<int, String> labels = {};
 
     for (final s in scores) {
-      totals.update(s.userId, (v) => v + s.score, ifAbsent: () => s.score);
+      totals.update(s.userId, (v) => v + (showScores ? s.score : 0),
+          ifAbsent: () => (showScores ? s.score : 0));
       labels[s.userId] = s.label;
     }
 
@@ -404,18 +373,13 @@ class LeaderboardScreen extends StatelessWidget {
 
     final int myTotal = currentUserId != null
         ? (totals[currentUserId] ?? 0)
-        : myScores.fold(0, (sum, s) => sum + s.score);
+        : myScores.fold(0, (sum, s) => sum + (showScores ? s.score : 0));
 
-    // Kendi tahmin yaptığın (matchId, playerId) çiftlerini set'e al
-    final myPairs = myScores
-        .map((s) => '${s.challenge.matchId}_${s.challenge.playerId}')
-        .toSet();
+    final myPairs = myScores.map((s) => '${s.challenge.matchId}_${s.challenge.playerId}').toSet();
 
-    // Aynı oyuncuya tahmin yapan diğer kullanıcılar
     final rivals = scores.where((s) {
       if (s.isCurrentUser) return false;
-      final key =
-          '${s.challenge.matchId}_${s.challenge.playerId}';
+      final key = '${s.challenge.matchId}_${s.challenge.playerId}';
       return myPairs.contains(key);
     }).toList()
       ..sort((a, b) => b.score.compareTo(a.score));
@@ -425,13 +389,17 @@ class LeaderboardScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 1) Genel sıralama: herkesin toplamı
+          if (!showScores)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Maçlar bitmeden skorlar gizli. Maç bitince otomatik hesaplanır.',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
           const Text(
             'Genel Sıralama (Toplam Puanlar)',
-            style: TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           ...totalEntries.asMap().entries.map((entry) {
@@ -440,9 +408,7 @@ class LeaderboardScreen extends StatelessWidget {
             final total = entry.value.value;
             final label = labels[userId] ?? 'User $userId';
 
-            // Kendi satırını biraz öne çıkarmak istersen:
-            final bool isMe =
-                currentUserId != null && userId == currentUserId;
+            final bool isMe = currentUserId != null && userId == currentUserId;
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 8.0),
@@ -462,8 +428,8 @@ class LeaderboardScreen extends StatelessWidget {
                     ),
                   ),
                   trailing: Text(
-                    '$total',
-                    style: TextStyle(
+                    showScores ? '$total' : '—',
+                    style: const TextStyle(
                       fontWeight: FontWeight.w900,
                       color: AppColors.yellow,
                     ),
@@ -472,55 +438,35 @@ class LeaderboardScreen extends StatelessWidget {
               ),
             );
           }),
-
           const SizedBox(height: 24),
-
-          // 2) Senin toplamın + kendi tahminlerin
           Card(
             child: ListTile(
-              title: const Text(
-                'Toplam Puanın',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
+              title: const Text('Toplam Puanın', style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: Text(
-                myScores.isEmpty
-                    ? 'Henüz tahmin yapmadın.'
-                    : 'Toplam tahmin sayısı: ${myScores.length}',
+                myScores.isEmpty ? 'Henüz tahmin yapmadın.' : 'Toplam tahmin sayısı: ${myScores.length}',
               ),
               trailing: Text(
-                '$myTotal',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.yellow,
-                ),
+                showScores ? '$myTotal' : '—',
+                style: const TextStyle(fontWeight: FontWeight.w900, color: AppColors.yellow),
               ),
             ),
           ),
           const SizedBox(height: 16),
-
-          Text(
+          const Text(
             'Senin Tahminlerin',
-            style: const TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           if (myScores.isEmpty)
-            const Text(
-              'Bu gün için tahminin yok.',
-              style: TextStyle(color: Colors.white70),
-            )
+            const Text('Bu gün için tahminin yok.', style: TextStyle(color: Colors.white70))
           else
             ...myScores.map(
               (s) => Padding(
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: Card(
                   child: ListTile(
-                    title: Text(
-                      s.challenge.playerName,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                    title: Text(s.challenge.playerName,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
                       'Tahmin: ${s.challenge.points} sayı · '
                       '${s.challenge.assists} ast · '
@@ -528,26 +474,17 @@ class LeaderboardScreen extends StatelessWidget {
                       style: const TextStyle(color: Colors.white70),
                     ),
                     trailing: Text(
-                      '${s.score}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.yellow,
-                      ),
+                      showScores ? '${s.score}' : '—',
+                      style: const TextStyle(fontWeight: FontWeight.w900, color: AppColors.yellow),
                     ),
                   ),
                 ),
               ),
             ),
-
           const SizedBox(height: 24),
-
-          // 3) Aynı oyuncuya tahmin yapanlar
-          Text(
+          const Text(
             'Aynı Oyuncuya Tahmin Yapanlar',
-            style: const TextStyle(
-              color: Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           if (rivals.isEmpty)
@@ -561,11 +498,7 @@ class LeaderboardScreen extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: Card(
                   child: ListTile(
-                    title: Text(
-                      s.label, // diğer kullanıcı
-                      style:
-                          const TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                    title: Text(s.label, style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
                       '${s.challenge.playerName}\n'
                       'Tahmin: ${s.challenge.points} sayı · '
@@ -574,11 +507,8 @@ class LeaderboardScreen extends StatelessWidget {
                       style: const TextStyle(color: Colors.white70),
                     ),
                     trailing: Text(
-                      '${s.score}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.yellow,
-                      ),
+                      showScores ? '${s.score}' : '—',
+                      style: const TextStyle(fontWeight: FontWeight.w900, color: AppColors.yellow),
                     ),
                   ),
                 ),

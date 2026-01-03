@@ -22,6 +22,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   bool _submitting = false;
 
+  // ✅ eye toggles
+  bool _obscurePass1 = true;
+  bool _obscurePass2 = true;
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -45,12 +49,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
     final pass = _passCtrl.text;
 
     try {
-      // ✅ signUp imzasını birazdan değiştireceğiz:
-      // signUp(email, name, username, pass)
       await auth.signUp(email, name, username, pass);
 
       if (!mounted) return;
-      Navigator.of(context).pop(); // geri dön (login)
+      Navigator.of(context).pop(); // back to login
     } catch (e) {
       setState(() => _submitting = false);
 
@@ -65,6 +67,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
         SnackBar(content: Text(msg)),
       );
     }
+  }
+
+  InputDecoration _passDecoration({
+    required String label,
+    required bool obscure,
+    required VoidCallback onToggle,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      border: const OutlineInputBorder(),
+      suffixIcon: IconButton(
+        onPressed: onToggle,
+        icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
+        tooltip: obscure ? 'Göster' : 'Gizle',
+      ),
+    );
   }
 
   @override
@@ -96,7 +114,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
               ),
               const SizedBox(height: 12),
 
-              // ✅ YENİ: USERNAME
               TextFormField(
                 controller: _usernameCtrl,
                 decoration: const InputDecoration(
@@ -109,7 +126,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   if (value.isEmpty) return 'Kullanıcı adı boş olamaz';
                   if (value.length < 3) return 'En az 3 karakter olmalı';
 
-                  // sadece harf/rakam/_/.
                   final ok = RegExp(r'^[a-zA-Z0-9_.]+$').hasMatch(value);
                   if (!ok) return 'Sadece harf, rakam, _ ve . kullan';
 
@@ -135,14 +151,18 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   return null;
                 },
               ),
+
               const SizedBox(height: 12),
+
+              // ✅ password with eye icon
               TextFormField(
                 controller: _passCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Şifre',
-                  border: OutlineInputBorder(),
+                decoration: _passDecoration(
+                  label: 'Şifre',
+                  obscure: _obscurePass1,
+                  onToggle: () => setState(() => _obscurePass1 = !_obscurePass1),
                 ),
-                obscureText: true,
+                obscureText: _obscurePass1,
                 validator: (v) {
                   if (v == null || v.isEmpty) {
                     return 'Şifre boş olamaz';
@@ -153,14 +173,18 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   return null;
                 },
               ),
+
               const SizedBox(height: 12),
+
+              // ✅ password repeat with eye icon
               TextFormField(
                 controller: _pass2Ctrl,
-                decoration: const InputDecoration(
-                  labelText: 'Şifre (tekrar)',
-                  border: OutlineInputBorder(),
+                decoration: _passDecoration(
+                  label: 'Şifre (tekrar)',
+                  obscure: _obscurePass2,
+                  onToggle: () => setState(() => _obscurePass2 = !_obscurePass2),
                 ),
-                obscureText: true,
+                obscureText: _obscurePass2,
                 validator: (v) {
                   if (v == null || v.isEmpty) {
                     return 'Şifre tekrar boş olamaz';
@@ -171,6 +195,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   return null;
                 },
               ),
+
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,

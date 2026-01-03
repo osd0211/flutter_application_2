@@ -9,28 +9,26 @@ import 'package:sqflite/sqflite.dart';
 class DatabaseService {
   static Database? _db;
 
-  /// DB'ye erişmek için tek nokta
   static Future<Database> get database async {
     if (_db != null) return _db!;
     _db = await _initDB();
     return _db!;
   }
 
-  /// Fiziksel .db dosyasını oluşturur / açar
   static Future<Database> _initDB() async {
     final Directory docs = await getApplicationDocumentsDirectory();
     final String dbPath = join(docs.path, 'euroscore.db');
 
     return openDatabase(
       dbPath,
-      version: 5, // ✅ artırdık (migration fix)
+      version: 7, // ✅ badges + prediction meta
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
   }
 
   // ------------------------------------------------------------
-  // ✅ Helpers: column var mı?
+  // Helpers: column var mı?
   // ------------------------------------------------------------
   static Future<bool> _hasColumn(Database db, String table, String column) async {
     final rows = await db.rawQuery('PRAGMA table_info($table)');
@@ -54,9 +52,103 @@ class DatabaseService {
     }
   }
 
-  /// Uygulama ilk kez açıldığında tablolar burada oluşturulur
+  // ------------------------------------------------------------
+  // Badges: table create + helpers
+  // ------------------------------------------------------------
+
+  static Future<void> _ensureBadgesTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS user_badges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        badge_key TEXT NOT NULL,
+        earned_at TEXT NOT NULL,
+        UNIQUE(user_id, badge_key)
+      );
+    ''');
+  }
+
+  static int xpForBadge(String badgeKey) {
+    switch (badgeKey) {
+      // favorites
+      case 'fav_team_set':
+        return 50;
+      case 'fav_player_set':
+        return 50;
+
+      // prediction activity
+      case 'first_prediction':
+        return 10;
+      case 'day_5_predictions':
+        return 20;
+
+      // accuracy (finalize after match)
+      case 'exact_1':
+        return 5;
+      case 'exact_2':
+        return 10;
+      case 'perfect_3':
+        return 25;
+
+      // level milestones
+      case 'level_5':
+        return 25;
+      case 'level_10':
+        return 50;
+      case 'level_25':
+        return 100;
+      case 'level_50':
+        return 200;
+      case 'level_100':
+        return 500;
+
+      default:
+        return 0;
+    }
+  }
+
+  static Future<bool> awardBadgeOnce({
+    required int userId,
+    required String badgeKey,
+  }) async {
+    final db = await database;
+    await _ensureBadgesTable(db);
+
+    final nowIso = DateTime.now().toIso8601String();
+
+    // insert ignore
+    final inserted = await db.rawInsert(
+      'INSERT OR IGNORE INTO user_badges (user_id, badge_key, earned_at) VALUES (?, ?, ?)',
+      [userId, badgeKey, nowIso],
+    );
+
+    // SQLite: inserted rowId > 0 => yeni badge
+    if (inserted > 0) {
+      final xp = xpForBadge(badgeKey);
+      if (xp > 0) {
+        await addXp(userId: userId, gainedXp: xp);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  static Future<List<Map<String, Object?>>> loadBadgesForUser(int userId) async {
+    final db = await database;
+    await _ensureBadgesTable(db);
+    return db.query(
+      'user_badges',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+      orderBy: 'earned_at DESC',
+    );
+  }
+
+  // ------------------------------------------------------------
+  // onCreate
+  // ------------------------------------------------------------
   static Future<void> _onCreate(Database db, int version) async {
-    // USERS tablosu
+    // USERS
     await db.execute('''
       CREATE TABLE users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,7 +166,7 @@ class DatabaseService {
       );
     ''');
 
-    // PREDICTIONS tablosu
+    // PREDICTIONS
     await db.execute('''
       CREATE TABLE predictions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,11 +179,17 @@ class DatabaseService {
         pred_reb INTEGER NOT NULL,
         points INTEGER,
         created_at TEXT NOT NULL,
+
+        -- ✅ badge/finalize metadata (opsiyonel)
+        exact_count INTEGER,
+        badges_awarded INTEGER NOT NULL DEFAULT 0,
+        scored_at TEXT,
+
         FOREIGN KEY (user_id) REFERENCES users(id)
       );
     ''');
 
-    // SETTINGS tablosu
+    // SETTINGS
     await db.execute('''
       CREATE TABLE settings (
         key TEXT PRIMARY KEY,
@@ -99,7 +197,10 @@ class DatabaseService {
       );
     ''');
 
-    // Demo kullanıcılar (admin + 2 user)
+    // ✅ Badges
+    await _ensureBadgesTable(db);
+
+    // Demo users
     await db.insert('users', {
       'email': 'admin@euroscore.app',
       'name': 'Admin',
@@ -131,9 +232,11 @@ class DatabaseService {
     });
   }
 
-  /// ✅ Migration: eski db'lerde kolonları güvenli ekle
+  // ------------------------------------------------------------
+  // onUpgrade
+  // ------------------------------------------------------------
   static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // En güvenlisi: version’a bakmadan kolonları "varsa geç" mantığıyla eklemek
+    // users columns
     await _addColumnIfMissing(db, 'users', 'username', 'TEXT');
     await _addColumnIfMissing(db, 'users', 'xp', 'INTEGER NOT NULL DEFAULT 0');
     await _addColumnIfMissing(db, 'users', 'level', 'INTEGER NOT NULL DEFAULT 1');
@@ -141,16 +244,137 @@ class DatabaseService {
     await _addColumnIfMissing(db, 'users', 'favorite_team_name', 'TEXT');
     await _addColumnIfMissing(db, 'users', 'favorite_player_id', 'TEXT');
     await _addColumnIfMissing(db, 'users', 'favorite_player_name', 'TEXT');
+
+    // predictions meta columns
+    await _addColumnIfMissing(db, 'predictions', 'exact_count', 'INTEGER');
+    await _addColumnIfMissing(db, 'predictions', 'badges_awarded', 'INTEGER NOT NULL DEFAULT 0');
+    await _addColumnIfMissing(db, 'predictions', 'scored_at', 'TEXT');
+
+    // badges table
+    await _ensureBadgesTable(db);
   }
 
-  /// ✅ Username NULL olanlara otomatik üret (1 kere çağırman yeter)
+  // ------------------------------------------------------------
+  // XP + LEVEL helpers
+  // ------------------------------------------------------------
+
+  /// Level 1->2: 100, sonra +25
+  static int _requiredXpForLevel(int level) {
+    return 100 + (level - 1) * 25;
+  }
+
+  static int _computeLevelFromTotalXp(int totalXp) {
+    int level = 1;
+    int remaining = totalXp;
+
+    while (remaining >= _requiredXpForLevel(level)) {
+      remaining -= _requiredXpForLevel(level);
+      level += 1;
+    }
+    return level;
+  }
+
+  static Future<void> _awardLevelMilestonesIfNeeded({
+    required int userId,
+    required int oldLevel,
+    required int newLevel,
+  }) async {
+    const thresholds = [5, 10, 25, 50, 100];
+    for (final t in thresholds) {
+      if (oldLevel < t && newLevel >= t) {
+        await awardBadgeOnce(userId: userId, badgeKey: 'level_$t');
+      }
+    }
+  }
+
+  static Future<void> addXp({
+    required int userId,
+    required int gainedXp,
+  }) async {
+    if (gainedXp <= 0) return;
+
+    final db = await database;
+
+    final rows = await db.query(
+      'users',
+      columns: ['xp', 'level'],
+      where: 'id = ?',
+      whereArgs: [userId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+
+    final int oldXp = (rows.first['xp'] as int?) ?? 0;
+    final int oldLevel = (rows.first['level'] as int?) ?? 1;
+
+    final int newXp = oldXp + gainedXp;
+    final int newLevel = _computeLevelFromTotalXp(newXp);
+
+    await db.update(
+      'users',
+      {'xp': newXp, 'level': newLevel},
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+
+    // ✅ level milestone badges
+    if (newLevel > oldLevel) {
+      await _awardLevelMilestonesIfNeeded(
+        userId: userId,
+        oldLevel: oldLevel,
+        newLevel: newLevel,
+      );
+    }
+  }
+
+  static bool canChangeUsername(int level) => level >= 5;
+  static int totalPredictionLimit(int level) => 5 + (level ~/ 5);
+
+  // ------------------------------------------------------------
+  // Prediction activity badges (first + day 5)
+  // ------------------------------------------------------------
+  static String _todayPrefix() {
+    final now = DateTime.now();
+    final y = now.year.toString().padLeft(4, '0');
+    final m = now.month.toString().padLeft(2, '0');
+    final d = now.day.toString().padLeft(2, '0');
+    return '$y-$m-$d'; // ISO prefix
+  }
+
+  static Future<void> onNewPredictionCreated(int userId) async {
+    final db = await database;
+
+    // total count
+    final totalRows = await db.rawQuery(
+      'SELECT COUNT(*) AS c FROM predictions WHERE user_id = ?',
+      [userId],
+    );
+    final int totalCount = (totalRows.first['c'] as int?) ?? 0;
+
+    if (totalCount == 1) {
+      await awardBadgeOnce(userId: userId, badgeKey: 'first_prediction');
+    }
+
+    // today count
+    final prefix = _todayPrefix();
+    final todayRows = await db.rawQuery(
+      "SELECT COUNT(*) AS c FROM predictions WHERE user_id = ? AND created_at LIKE ?",
+      [userId, '$prefix%'],
+    );
+    final int todayCount = (todayRows.first['c'] as int?) ?? 0;
+
+    if (todayCount >= 5) {
+      await awardBadgeOnce(userId: userId, badgeKey: 'day_5_predictions');
+    }
+  }
+
+  // ------------------------------------------------------------
+  // Username NULL => generate
+  // ------------------------------------------------------------
   static Future<void> generateUsernamesIfMissing() async {
     final db = await database;
 
-    final users = await db.query(
-      'users',
-      where: 'username IS NULL',
-    );
+    final users = await db.query('users', where: 'username IS NULL');
 
     for (final user in users) {
       final int id = user['id'] as int;
@@ -166,7 +390,7 @@ class DatabaseService {
           .replaceAll('ğ', 'g')
           .replaceAll('ı', 'i');
 
-      final int random = (1000 + (id * 37) % 9000); // deterministic
+      final int random = (1000 + (id * 37) % 9000);
       final String username = '${safeName}_$random';
 
       await db.update(
@@ -178,22 +402,9 @@ class DatabaseService {
     }
   }
 
-  /// 🔍 SADECE TEST İÇİN: users tablosunu yazdırır
-  static Future<void> debugPrintUsers() async {
-    final db = await database;
-    final rows = await db.rawQuery(
-      'SELECT id, name, username, email, role, level, xp, favorite_team_code, favorite_team_name, favorite_player_id, favorite_player_name FROM users',
-    );
-    for (final r in rows) {
-      // ignore: avoid_print
-      print(r);
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // SETTINGS helper'ları: current_day_date
-  // ---------------------------------------------------------------------------
-
+  // ------------------------------------------------------------
+  // SETTINGS: current_day_date
+  // ------------------------------------------------------------
   static const String _currentDayKey = 'current_day_date';
 
   static String _fmtDate(DateTime d) {
@@ -234,10 +445,9 @@ class DatabaseService {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // PREDICTIONS helper'ları
-  // ---------------------------------------------------------------------------
-
+  // ------------------------------------------------------------
+  // PREDICTIONS
+  // ------------------------------------------------------------
   static Future<void> upsertPrediction({
     required int userId,
     required String matchId,
@@ -269,6 +479,9 @@ class DatabaseService {
         'pred_reb': predReb,
         'points': null,
         'created_at': nowIso,
+        'exact_count': null,
+        'badges_awarded': 0,
+        'scored_at': null,
       });
     } else {
       final id = existing.first['id'] as int;
@@ -282,6 +495,10 @@ class DatabaseService {
           'pred_reb': predReb,
           'points': null,
           'created_at': nowIso,
+          // update olunca outcome meta reset:
+          'exact_count': null,
+          'badges_awarded': 0,
+          'scored_at': null,
         },
         where: 'id = ?',
         whereArgs: [id],
@@ -291,25 +508,7 @@ class DatabaseService {
 
   static Future<List<Map<String, Object?>>> loadPredictionsForUser(int userId) async {
     final db = await database;
-    return db.query(
-      'predictions',
-      where: 'user_id = ?',
-      whereArgs: [userId],
-    );
-  }
-
-  static Future<void> updatePredictionPoints({
-    required int userId,
-    required String challengeId,
-    required int points,
-  }) async {
-    final db = await database;
-    await db.update(
-      'predictions',
-      {'points': points},
-      where: 'user_id = ? AND challenge_id = ?',
-      whereArgs: [userId, challengeId],
-    );
+    return db.query('predictions', where: 'user_id = ?', whereArgs: [userId]);
   }
 
   static Future<List<Map<String, Object?>>> loadPredictionsWithUsersForMatches(
@@ -334,10 +533,9 @@ class DatabaseService {
     return db.rawQuery(sql, matchIds);
   }
 
-  // ---------------------------------------------------------------------------
-  // USERS helper'ı: yeni kullanıcı oluşturma
-  // ---------------------------------------------------------------------------
-
+  // ------------------------------------------------------------
+  // USERS: create / admin helpers / getUser
+  // ------------------------------------------------------------
   static Future<int> createUser({
     required String email,
     required String name,
@@ -381,10 +579,6 @@ class DatabaseService {
 
     return id;
   }
-
-  // ---------------------------------------------------------------------------
-  // ADMIN HELPERS (test için)
-  // ---------------------------------------------------------------------------
 
   static Future<List<Map<String, Object?>>> adminLoadAllUsers() async {
     final db = await database;
@@ -458,17 +652,16 @@ class DatabaseService {
     final db = await database;
     final safeXp = xp < 0 ? 0 : xp;
 
+    final newLevel = _computeLevelFromTotalXp(safeXp);
+
     await db.update(
       'users',
-      {'xp': safeXp},
+      {'xp': safeXp, 'level': newLevel},
       where: 'id = ?',
       whereArgs: [userId],
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // ✅ Profil için user çek
-  // ---------------------------------------------------------------------------
   static Future<Map<String, Object?>?> getUserById(int userId) async {
     final db = await database;
 
@@ -483,9 +676,9 @@ class DatabaseService {
     return rows.first;
   }
 
-  // ---------------------------------------------------------------------------
-  // ✅ Favori takım kaydet
-  // ---------------------------------------------------------------------------
+  // ------------------------------------------------------------
+  // Favorites => badge (XP badge’den geliyor)
+  // ------------------------------------------------------------
   static Future<void> updateFavoriteTeam({
     required int userId,
     required String? teamCode,
@@ -495,18 +688,17 @@ class DatabaseService {
 
     await db.update(
       'users',
-      {
-        'favorite_team_code': teamCode,
-        'favorite_team_name': teamName,
-      },
+      {'favorite_team_code': teamCode, 'favorite_team_name': teamName},
       where: 'id = ?',
       whereArgs: [userId],
     );
+
+    if (teamCode == null || teamCode.trim().isEmpty) return;
+
+    // ✅ badge -> XP
+    await awardBadgeOnce(userId: userId, badgeKey: 'fav_team_set');
   }
 
-  // ---------------------------------------------------------------------------
-  // ✅ Favori oyuncu kaydet
-  // ---------------------------------------------------------------------------
   static Future<void> updateFavoritePlayer({
     required int userId,
     required String? playerId,
@@ -516,12 +708,64 @@ class DatabaseService {
 
     await db.update(
       'users',
-      {
-        'favorite_player_id': playerId,
-        'favorite_player_name': playerName,
-      },
+      {'favorite_player_id': playerId, 'favorite_player_name': playerName},
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+
+    if (playerId == null || playerId.trim().isEmpty) return;
+
+    // ✅ badge -> XP
+    await awardBadgeOnce(userId: userId, badgeKey: 'fav_player_set');
+  }
+
+     /// ✅ Placeholder: leaderboards calls this with named params.
+  /// Later we will compute final scores + award accuracy badges here.
+  static Future<void> finalizeScoresForMatches({
+    required List<String> matchIds,
+    required Map<String, Object?> boxscoreByPlayerId,
+  }) async {
+    // intentionally empty for now (prevents compile errors)
+    return;
+  }
+  // ------------------------------------------------------------
+  // ✅ Change Password
+  // ------------------------------------------------------------
+  static Future<void> changePassword({
+    required int userId,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final db = await database;
+
+    final rows = await db.query(
+      'users',
+      columns: ['password'],
+      where: 'id = ?',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) {
+      throw Exception('user-not-found');
+    }
+
+    final dbPass = (rows.first['password'] as String?) ?? '';
+    if (dbPass != currentPassword) {
+      throw Exception('wrong-password');
+    }
+
+    if (newPassword.trim().length < 6) {
+      throw Exception('weak-password');
+    }
+
+    await db.update(
+      'users',
+      {'password': newPassword},
       where: 'id = ?',
       whereArgs: [userId],
     );
   }
+
+
 }

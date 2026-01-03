@@ -15,8 +15,12 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _identifier = TextEditingController(); // email veya username
   final _pass = TextEditingController();
+
   bool _busy = false;
   String? _error;
+
+  // ✅ eye toggle
+  bool _obscurePass = true;
 
   @override
   void dispose() {
@@ -43,10 +47,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final auth = context.read<IAuthService>();
-      await auth.signIn(id, pass); // ✅ email veya username
+      await auth.signIn(id, pass);
 
       if (!mounted) return;
-
       Navigator.of(context).pushNamedAndRemoveUntil('/home', (_) => false);
     } catch (e) {
       if (!mounted) return;
@@ -98,14 +101,22 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
 
                 const SizedBox(height: 12),
+
+                // ✅ password with eye icon
                 TextField(
                   controller: _pass,
-                  obscureText: true,
-                  decoration: const InputDecoration(
+                  obscureText: _obscurePass,
+                  decoration: InputDecoration(
                     labelText: 'Şifre',
-                    prefixIcon: Icon(Icons.lock_outline),
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      onPressed: () => setState(() => _obscurePass = !_obscurePass),
+                      icon: Icon(_obscurePass ? Icons.visibility_off : Icons.visibility),
+                      tooltip: _obscurePass ? 'Göster' : 'Gizle',
+                    ),
                   ),
                 ),
+
                 const SizedBox(height: 8),
 
                 if (_error != null) ...[

@@ -24,8 +24,7 @@ Future<void> main() async {
 
 
   await DatabaseService.generateUsernamesIfMissing();
-  await DatabaseService.debugPrintUsers(); // 👈 SADECE TEST
-
+  
 
   // Opsiyonel: gerçek auth kullanacaksan aktif bırak.
   if (Env.useSupabaseAuth) {

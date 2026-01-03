@@ -1,6 +1,7 @@
 // lib/screens/profile_screen.dart
-import 'dart:async'; // LineSplitter
-import 'dart:convert'; // LineSplitter
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:provider/provider.dart';
@@ -8,11 +9,12 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
 import 'admin_users_screen.dart';
+import '../core/badges.dart';
 
 class _TeamNameRange {
-  final String fromSeason; // E2007
-  final String toSeason; // E2012
-  final String name; // team full name
+  final String fromSeason;
+  final String toSeason;
+  final String name;
 
   const _TeamNameRange(this.fromSeason, this.toSeason, this.name);
 }
@@ -30,27 +32,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _favoriteTeamCode;
   String? _favoriteTeamName;
 
-  // ✅ Favori oyuncu
   String? _favoritePlayerId;
   String? _favoritePlayerName;
 
   Map<String, List<_TeamNameRange>> _historyByCode = {};
-
-  // ✅ player_id -> player_name (son sezon tek kayıt)
   Map<String, String> _playerIdToName = {};
+
+  // ✅ rozetler
+  List<Map<String, Object?>> _badges = [];
 
   @override
   void initState() {
     super.initState();
     _loadProfileFromDb();
 
-    // takım isim tarihçesi
     _buildTeamNameHistoryFromHeader().then((m) {
       if (!mounted) return;
       setState(() => _historyByCode = m);
     });
 
-    // ✅ oyuncu listesi (son sezon tek satır)
     _loadLatestPlayersFromPlayersCsv().then((m) {
       if (!mounted) return;
       setState(() => _playerIdToName = m);
@@ -67,20 +67,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _favoriteTeamName = null;
         _favoritePlayerId = null;
         _favoritePlayerName = null;
+        _badges = [];
         _loading = false;
       });
       return;
     }
 
     final row = await DatabaseService.getUserById(uid);
+    final badges = await DatabaseService.loadBadgesForUser(uid);
 
     setState(() {
       _favoriteTeamCode = row?['favorite_team_code'] as String?;
       _favoriteTeamName = row?['favorite_team_name'] as String?;
-
       _favoritePlayerId = row?['favorite_player_id'] as String?;
       _favoritePlayerName = row?['favorite_player_name'] as String?;
-
+      _badges = badges;
       _loading = false;
     });
   }
@@ -144,7 +145,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final code = v[idIdx].replaceAll('"', '').trim();
         final name = v[nameIdx].replaceAll('"', '').trim();
         if (code.isNotEmpty && name.isNotEmpty) {
-          map[code] = name; // overwrite ok
+          map[code] = name;
         }
       }
 
@@ -246,7 +247,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<Map<String, String>> _loadLatestPlayersFromPlayersCsv() async {
-    // ⚠️ Dosya adın farklıysa sadece burayı değiştir:
     final csv = await rootBundle.loadString('data_raw/euroleague_players.csv');
     final lines = const LineSplitter().convert(csv);
     if (lines.length < 2) return {};
@@ -259,7 +259,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final idxSeason = idx('season_code');
     final idxPlayerId = idx('player_id');
-    final idxPlayerName = idx('player'); // sende "player" var
+    final idxPlayerName = idx('player');
 
     if ([idxSeason, idxPlayerId, idxPlayerName].any((i) => i == -1)) return {};
 
@@ -274,9 +274,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         continue;
       }
 
-      final seasonCode = v[idxSeason].replaceAll('"', '').trim(); // E2017
-      final pid = v[idxPlayerId].replaceAll('"', '').trim(); // P003733
-      final name = v[idxPlayerName].replaceAll('"', '').trim(); // "ABALDE, ALBERTO"
+      final seasonCode = v[idxSeason].replaceAll('"', '').trim();
+      final pid = v[idxPlayerId].replaceAll('"', '').trim();
+      final name = v[idxPlayerName].replaceAll('"', '').trim();
 
       if (seasonCode.isEmpty || pid.isEmpty || name.isEmpty) continue;
 
@@ -293,7 +293,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ------------------------------------------------------------
-  // ✅ Favori takım seçme dialogu (code+name kaydeder)
+  // ✅ Favori takım seç
   // ------------------------------------------------------------
   Future<void> _showPickFavoriteTeamDialog(BuildContext context) async {
     final auth = context.read<IAuthService>();
@@ -404,23 +404,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
       teamName: newName,
     );
 
-    if (!mounted) return;
-    setState(() {
-      _favoriteTeamCode = newCode;
-      _favoriteTeamName = newName;
-    });
+    // rozetler/xp reload
+    await _loadProfileFromDb();
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          newCode == null ? 'Favori takım temizlendi' : 'Favori takım kaydedildi: $newName',
+          newCode == null ? 'Favori takım temizlendi' : 'Favori takım kaydedildi ✅ (Badge)',
         ),
       ),
     );
   }
 
   // ------------------------------------------------------------
-  // ✅ Favori oyuncu seçme dialogu (player_id + player_name kaydeder)
+  // ✅ Favori oyuncu seç
   // ------------------------------------------------------------
   Future<void> _showPickFavoritePlayerDialog(BuildContext context) async {
     final auth = context.read<IAuthService>();
@@ -429,7 +427,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     Map<String, String> idToName = _playerIdToName;
 
-    // hazır değilse yükle
     if (idToName.isEmpty) {
       try {
         idToName = await _loadLatestPlayersFromPlayersCsv();
@@ -493,12 +490,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         itemCount: list.length,
                         separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (_, i) {
-                          final e = list[i]; // id->name
+                          final e = list[i];
                           final isSelected = e.key == _favoritePlayerId;
 
                           return ListTile(
                             title: Text(e.value),
-                            
                             trailing: isSelected ? const Icon(Icons.check) : null,
                             onTap: () => Navigator.pop(ctx, e.key),
                           );
@@ -514,7 +510,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: const Text('İptal'),
                 ),
                 TextButton(
-                  onPressed: () => Navigator.pop(ctx, ''), // temizle
+                  onPressed: () => Navigator.pop(ctx, ''),
                   child: const Text('Temizle'),
                 ),
               ],
@@ -535,16 +531,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       playerName: newName,
     );
 
-    if (!mounted) return;
-    setState(() {
-      _favoritePlayerId = newId;
-      _favoritePlayerName = newName;
-    });
+    // rozetler/xp reload
+    await _loadProfileFromDb();
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          newId == null ? 'Favori oyuncu temizlendi' : 'Favori oyuncu kaydedildi: $newName',
+          newId == null ? 'Favori oyuncu temizlendi' : 'Favori oyuncu kaydedildi ✅ (Badge)',
         ),
       ),
     );
@@ -619,6 +613,132 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  // ------------------------------------------------------------
+  // ✅ Change Password (dialog)
+  // ------------------------------------------------------------
+  Future<void> _showChangePasswordDialog(BuildContext context) async {
+    final auth = context.read<IAuthService>();
+    final uid = auth.currentUserId;
+    if (uid == null) return;
+
+    final currentCtrl = TextEditingController();
+    final newCtrl = TextEditingController();
+    final new2Ctrl = TextEditingController();
+
+    bool obscure1 = true;
+    bool obscure2 = true;
+    bool obscure3 = true;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return AlertDialog(
+              title: const Text('Şifre Değiştir'),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: currentCtrl,
+                      obscureText: obscure1,
+                      decoration: InputDecoration(
+                        labelText: 'Mevcut şifre',
+                        suffixIcon: IconButton(
+                          onPressed: () => setLocal(() => obscure1 = !obscure1),
+                          icon: Icon(obscure1 ? Icons.visibility_off : Icons.visibility),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: newCtrl,
+                      obscureText: obscure2,
+                      decoration: InputDecoration(
+                        labelText: 'Yeni şifre (min 6)',
+                        suffixIcon: IconButton(
+                          onPressed: () => setLocal(() => obscure2 = !obscure2),
+                          icon: Icon(obscure2 ? Icons.visibility_off : Icons.visibility),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: new2Ctrl,
+                      obscureText: obscure3,
+                      decoration: InputDecoration(
+                        labelText: 'Yeni şifre (tekrar)',
+                        suffixIcon: IconButton(
+                          onPressed: () => setLocal(() => obscure3 = !obscure3),
+                          icon: Icon(obscure3 ? Icons.visibility_off : Icons.visibility),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('İptal'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Kaydet'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (ok != true) return;
+
+    final current = currentCtrl.text;
+    final next = newCtrl.text;
+    final next2 = new2Ctrl.text;
+
+    if (next != next2) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Yeni şifreler eşleşmiyor')),
+      );
+      return;
+    }
+
+    try {
+      await DatabaseService.changePassword(
+        userId: uid,
+        currentPassword: current,
+        newPassword: next,
+      );
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Şifre güncellendi ✅')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+
+      final s = e.toString();
+      final msg = s.contains('wrong-password')
+          ? 'Mevcut şifre yanlış.'
+          : s.contains('weak-password')
+              ? 'Yeni şifre en az 6 karakter olmalı.'
+              : s.contains('user-not-found')
+                  ? 'Kullanıcı bulunamadı.'
+                  : 'Şifre güncellenirken hata oluştu.';
+
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    }
+  }
+
+  // ------------------------------------------------------------
+  // UI
+  // ------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<IAuthService>();
@@ -634,9 +754,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final isAdmin = (auth.currentUserRole ?? '') == 'admin';
 
-    final List<_TeamNameRange> ranges = (_favoriteTeamCode == null)
-        ? const []
-        : (_historyByCode[_favoriteTeamCode!] ?? const []);
+    final List<_TeamNameRange> ranges =
+        (_favoriteTeamCode == null) ? const [] : (_historyByCode[_favoriteTeamCode!] ?? const []);
 
     return Scaffold(
       body: _loading
@@ -653,6 +772,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 12),
 
+                // PROFILE CARD
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -676,7 +796,59 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                 const SizedBox(height: 16),
 
-                // ✅ Favori takım
+                // ✅ ROZETLER
+                if (_badges.isNotEmpty) ...[
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Rozetlerim',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: _badges.map((b) {
+                              final key = (b['badge_key'] as String?) ?? '';
+                              final meta = badgeCatalog[key];
+
+                              final title = meta?.title ?? key;
+                              final icon = meta?.icon ?? Icons.verified;
+
+                              return Container(
+                                width: 110,
+                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.white24),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(icon, size: 28),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      title,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                // FAVORITE TEAM
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.star_outline),
@@ -687,7 +859,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
 
-                // ✅ Takım isim tarihçesi
+                // TEAM NAME HISTORY
                 if (_favoriteTeamCode != null && ranges.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Card(
@@ -718,7 +890,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                 const SizedBox(height: 12),
 
-                // ✅ Favori oyuncu
+                // FAVORITE PLAYER
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.person_outline),
@@ -731,18 +903,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                 const SizedBox(height: 16),
 
+                // USERNAME CHANGE
                 Card(
                   child: ListTile(
-                    leading: Icon((isAdmin || level >= 5)
-                        ? Icons.edit
-                        : Icons.lock_outline),
+                    leading: Icon((isAdmin || level >= 5) ? Icons.edit : Icons.lock_outline),
                     title: const Text('Kullanıcı adı değiştirme'),
                     subtitle: Text(
                       isAdmin
                           ? 'Admin ✅ (level bağımsız)'
-                          : (level >= 5
-                              ? 'Açık ✅ (Level 5+)'
-                              : 'Kilitli 🔒 (Level 5’te açılır)'),
+                          : (level >= 5 ? 'Açık ✅ (Level 5+)' : 'Kilitli 🔒 (Level 5’te açılır)'),
                     ),
                     trailing: (isAdmin || level >= 5)
                         ? const Icon(Icons.arrow_forward_ios, size: 16)
@@ -759,13 +928,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
 
+                const SizedBox(height: 12),
+
+                // ✅ CHANGE PASSWORD
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.lock_outline),
+                    title: const Text('Şifre değiştirme'),
+                    subtitle: const Text('Mevcut şifren ile yeni şifre belirle'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () => _showChangePasswordDialog(context),
+                  ),
+                ),
+
                 const SizedBox(height: 16),
 
-                Card(
-                  child: const ListTile(
+                const Card(
+                  child: ListTile(
                     leading: Icon(Icons.info_outline),
                     title: Text('Nasıl level atlarım?'),
-                    subtitle: Text('Tahmin yaptıkça XP kazanırsın.'),
+                    subtitle: Text('Tahmin yaptıkça ve badge kazandıkça XP kazanırsın.'),
                   ),
                 ),
 
@@ -795,17 +977,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       children: [
         Expanded(
           flex: 4,
-          child: Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
+          child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
         ),
         Expanded(
           flex: 6,
-          child: Text(
-            value,
-            textAlign: TextAlign.right,
-          ),
+          child: Text(value, textAlign: TextAlign.right),
         ),
       ],
     );
