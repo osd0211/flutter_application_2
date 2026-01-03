@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
+import '../models.dart';
+
 
 class DatabaseService {
   static Database? _db;
@@ -21,7 +23,7 @@ class DatabaseService {
 
     return openDatabase(
       dbPath,
-      version: 7, // ✅ badges + prediction meta
+      version: 8, // ✅ badges + prediction meta
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -72,23 +74,23 @@ class DatabaseService {
     switch (badgeKey) {
       // favorites
       case 'fav_team_set':
-        return 50;
+        return 100;
       case 'fav_player_set':
-        return 50;
+        return 100;
 
       // prediction activity
       case 'first_prediction':
-        return 10;
+        return 50;
       case 'day_5_predictions':
-        return 20;
+        return 100;
 
       // accuracy (finalize after match)
       case 'exact_1':
-        return 5;
+        return 50;
       case 'exact_2':
-        return 10;
+        return 100;
       case 'perfect_3':
-        return 25;
+        return 250;
 
       // level milestones
       case 'level_5':
@@ -252,6 +254,11 @@ class DatabaseService {
 
     // badges table
     await _ensureBadgesTable(db);
+    // ✅ v8 fix: some devices have exact_count as NOT NULL, so never leave it null
+    if (oldVersion < 8) {
+  await db.execute('UPDATE predictions SET exact_count = 0 WHERE exact_count IS NULL');
+}
+
   }
 
   // ------------------------------------------------------------
@@ -493,7 +500,7 @@ static int _minTotalXpForLevel(int level) {
         'pred_reb': predReb,
         'points': null,
         'created_at': nowIso,
-        'exact_count': null,
+        'exact_count': 0,
         'badges_awarded': 0,
         'scored_at': null,
       });
@@ -510,7 +517,7 @@ static int _minTotalXpForLevel(int level) {
           'points': null,
           'created_at': nowIso,
           // update olunca outcome meta reset:
-          'exact_count': null,
+          'exact_count': 0,
           'badges_awarded': 0,
           'scored_at': null,
         },
@@ -651,10 +658,10 @@ static Future<void> adminSetLevel({
   final db = await database;
   final safeLevel = level < 1 ? 1 : level;
 
-  // mevcut xp oku
+  // ✅ old xp + old level oku (milestone için oldLevel lazım)
   final rows = await db.query(
     'users',
-    columns: ['xp'],
+    columns: ['xp', 'level'],
     where: 'id = ?',
     whereArgs: [userId],
     limit: 1,
@@ -664,6 +671,7 @@ static Future<void> adminSetLevel({
   }
 
   final currentXp = (rows.first['xp'] as int?) ?? 0;
+  final oldLevel = (rows.first['level'] as int?) ?? 1;
 
   // ✅ bu level için minimum total xp
   final minXp = _minTotalXpForLevel(safeLevel);
@@ -680,39 +688,71 @@ static Future<void> adminSetLevel({
     where: 'id = ?',
     whereArgs: [userId],
   );
+
+  // ✅ level milestone rozetleri
+  if (safeLevel > oldLevel) {
+    await _awardLevelMilestonesIfNeeded(
+      userId: userId,
+      oldLevel: oldLevel,
+      newLevel: safeLevel,
+    );
+  }
 }
 
+static Future<void> adminSetXp({
+  required int userId,
+  required int xp,
+}) async {
+  final db = await database;
+  final safeXp = xp < 0 ? 0 : xp;
 
-  static Future<void> adminSetXp({
-    required int userId,
-    required int xp,
-  }) async {
-    final db = await database;
-    final safeXp = xp < 0 ? 0 : xp;
-
-    final newLevel = _computeLevelFromTotalXp(safeXp);
-
-    await db.update(
-      'users',
-      {'xp': safeXp, 'level': newLevel},
-      where: 'id = ?',
-      whereArgs: [userId],
-    );
+  // ✅ old level oku (milestone için)
+  final rows = await db.query(
+    'users',
+    columns: ['level'],
+    where: 'id = ?',
+    whereArgs: [userId],
+    limit: 1,
+  );
+  if (rows.isEmpty) {
+    throw Exception('user-not-found');
   }
 
-  static Future<Map<String, Object?>?> getUserById(int userId) async {
-    final db = await database;
+  final oldLevel = (rows.first['level'] as int?) ?? 1;
 
-    final rows = await db.query(
-      'users',
-      where: 'id = ?',
-      whereArgs: [userId],
-      limit: 1,
+  final newLevel = _computeLevelFromTotalXp(safeXp);
+
+  await db.update(
+    'users',
+    {'xp': safeXp, 'level': newLevel},
+    where: 'id = ?',
+    whereArgs: [userId],
+  );
+
+  // ✅ level milestone rozetleri
+  if (newLevel > oldLevel) {
+    await _awardLevelMilestonesIfNeeded(
+      userId: userId,
+      oldLevel: oldLevel,
+      newLevel: newLevel,
     );
-
-    if (rows.isEmpty) return null;
-    return rows.first;
   }
+}
+
+static Future<Map<String, Object?>?> getUserById(int userId) async {
+  final db = await database;
+
+  final rows = await db.query(
+    'users',
+    where: 'id = ?',
+    whereArgs: [userId],
+    limit: 1,
+  );
+
+  if (rows.isEmpty) return null;
+  return rows.first;
+}
+
 
   // ------------------------------------------------------------
 // ADMIN: Badge reset (test için)
@@ -745,11 +785,19 @@ static Future<void> adminResetBadgesAndXp({
     whereArgs: [userId],
   );
 
+  // 2.5) ✅ user's predictions delete (so first_prediction can be re-earned in tests)
+await db.delete(
+  'predictions',
+  where: 'user_id = ?',
+  whereArgs: [userId],
+);
+
+
   // 3) Prediction meta reset (accuracy badge’ler tekrar verilebilsin)
   await db.update(
     'predictions',
     {
-      'exact_count': null,
+      'exact_count': 0,
       'badges_awarded': 0,
       'scored_at': null,
       'points': null,
@@ -803,15 +851,73 @@ static Future<void> adminResetBadgesAndXp({
     await awardBadgeOnce(userId: userId, badgeKey: 'fav_player_set');
   }
 
-     /// ✅ Placeholder: leaderboards calls this with named params.
-  /// Later we will compute final scores + award accuracy badges here.
   static Future<void> finalizeScoresForMatches({
-    required List<String> matchIds,
-    required Map<String, Object?> boxscoreByPlayerId,
-  }) async {
-    // intentionally empty for now (prevents compile errors)
-    return;
+  required List<String> matchIds,
+  required Map<String, PlayerStat> boxscoreByPlayerId, // ✅ {playerId -> PlayerStat}
+}) async {
+  if (matchIds.isEmpty) return;
+
+  final db = await database;
+
+  final placeholders = List.filled(matchIds.length, '?').join(',');
+
+  // ✅ Only predictions not finalized yet
+  final preds = await db.rawQuery('''
+    SELECT *
+    FROM predictions
+    WHERE match_id IN ($placeholders)
+      AND (scored_at IS NULL OR badges_awarded = 0)
+  ''', matchIds);
+
+  if (preds.isEmpty) return;
+
+  final nowIso = DateTime.now().toIso8601String();
+
+  for (final p in preds) {
+    final int predId = (p['id'] as int);
+    final int userId = (p['user_id'] as int);
+    final String playerId = (p['player_id'] as String);
+
+    final stat = boxscoreByPlayerId[playerId];
+    if (stat == null) {
+      // boxscore yoksa finalize etme
+      continue;
+    }
+
+    final int predPts = ((p['pred_pts'] as num?) ?? 0).toInt();
+    final int predAst = ((p['pred_ast'] as num?) ?? 0).toInt();
+    final int predReb = ((p['pred_reb'] as num?) ?? 0).toInt();
+
+    int exact = 0;
+    if (predPts == stat.pts) exact++;
+    if (predAst == stat.ast) exact++;
+    if (predReb == stat.reb) exact++;
+
+    // ✅ write meta so we don't re-award
+    await db.update(
+      'predictions',
+      {
+        'exact_count': exact,  // 0..3
+        'badges_awarded': 1,   // finalized
+        'scored_at': nowIso,
+      },
+      where: 'id = ?',
+      whereArgs: [predId],
+    );
+
+    // ✅ award accuracy badges (once)
+    if (exact == 1) {
+      await awardBadgeOnce(userId: userId, badgeKey: 'exact_1');
+    }
+    if (exact == 2) {
+      await awardBadgeOnce(userId: userId, badgeKey: 'exact_2');
+    }
+    if (exact == 3) {
+      await awardBadgeOnce(userId: userId, badgeKey: 'perfect_3');
+    }
   }
+}
+
   // ------------------------------------------------------------
   // ✅ Change Password
   // ------------------------------------------------------------

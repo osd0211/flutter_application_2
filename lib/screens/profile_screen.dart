@@ -825,56 +825,71 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 16),
 
                   // ✅ ROZETLER
-                  if (_badges.isNotEmpty) ...[
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Rozetlerim',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            const SizedBox(height: 12),
-                            Wrap(
-                              spacing: 10,
-                              runSpacing: 10,
-                              children: _badges.map((b) {
-                                final key = (b['badge_key'] as String?) ?? '';
-                                final meta = badgeCatalog[key];
+if (_badges.isNotEmpty) ...[
+  Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Rozetlerim',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: _badges.map((b) {
+              final key = (b['badge_key'] as String?) ?? '';
+              final earnedAt = (b['earned_at'] as String?) ?? '';
+              final meta = badgeCatalog[key];
 
-                                final title = meta?.title ?? key;
-                                final icon = meta?.icon ?? Icons.verified;
+              final title = meta?.title ?? key;
+              final icon = meta?.icon ?? Icons.verified;
+              final xp = DatabaseService.xpForBadge(key);
 
-                                return Container(
-                                  width: 110,
-                                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.white24),
-                                  ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(icon, size: 28),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        title,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(fontWeight: FontWeight.w600),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ),
+              return InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  if (key.isEmpty) return;
+                  showBadgeDetailsSheet(
+                    context,
+                    badgeKey: key,
+                    earnedAt: earnedAt,
+                    xp: xp,
+                  );
+                },
+                child: Container(
+                  width: 110,
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, size: 28),
+                      const SizedBox(height: 8),
+                      Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    ),
+  ),
+  const SizedBox(height: 12),
+],
+
 
                   // FAVORITE TEAM
                   Card(

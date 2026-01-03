@@ -8,6 +8,7 @@ class BadgeMeta {
   const BadgeMeta(this.title, this.description, this.icon);
 }
 
+/// 🎖️ Badge catalog (title + description + icon)
 const Map<String, BadgeMeta> badgeCatalog = {
   // ⭐ Favoriler
   'fav_team_set': BadgeMeta(
@@ -68,7 +69,7 @@ const Map<String, BadgeMeta> badgeCatalog = {
   ),
   'level_50': BadgeMeta(
     'MVP',
-    'Level 50’ye ulaştın',
+    'Level 50’e ulaştın',
     Icons.emoji_events,
   ),
   'level_100': BadgeMeta(
@@ -77,3 +78,66 @@ const Map<String, BadgeMeta> badgeCatalog = {
     Icons.whatshot,
   ),
 };
+
+/// ✅ Badge detaylarını gösteren bottom sheet
+void showBadgeDetailsSheet(
+  BuildContext context, {
+  required String badgeKey,
+  required String earnedAt,
+  required int xp,
+}) {
+  final meta = badgeCatalog[badgeKey];
+
+  final title = meta?.title ?? badgeKey;
+  final desc = meta?.description ?? 'Açıklama bulunamadı.';
+  final icon = meta?.icon ?? Icons.verified;
+
+  showModalBottomSheet(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (_) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 28),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(desc),
+            const SizedBox(height: 14),
+            Text(
+              'XP: +$xp',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Kazanma: $earnedAt',
+              style: const TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Kapat'),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}

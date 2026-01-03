@@ -316,7 +316,7 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          isNewPrediction ? 'Tahmin kaydedildi. +20 XP' : 'Tahmin güncellendi.',
+          isNewPrediction ? 'Tahmin kaydedildi. ' : 'Tahmin güncellendi.',
         ),
       ),
     );
