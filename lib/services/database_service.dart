@@ -274,6 +274,20 @@ class DatabaseService {
     return level;
   }
 
+  /// ✅ Belirli bir level'a ulaşmak için gereken MIN total XP
+/// level=1 => 0
+/// level=2 => req(1)
+/// level=5 => req(1)+req(2)+req(3)+req(4)
+static int _minTotalXpForLevel(int level) {
+  final safeLevel = level < 1 ? 1 : level;
+  int total = 0;
+  for (int l = 1; l < safeLevel; l++) {
+    total += _requiredXpForLevel(l);
+  }
+  return total;
+}
+
+
   static Future<void> _awardLevelMilestonesIfNeeded({
     required int userId,
     required int oldLevel,
@@ -630,20 +644,44 @@ class DatabaseService {
     );
   }
 
-  static Future<void> adminSetLevel({
-    required int userId,
-    required int level,
-  }) async {
-    final db = await database;
-    final safeLevel = level < 1 ? 1 : level;
+static Future<void> adminSetLevel({
+  required int userId,
+  required int level,
+}) async {
+  final db = await database;
+  final safeLevel = level < 1 ? 1 : level;
 
-    await db.update(
-      'users',
-      {'level': safeLevel},
-      where: 'id = ?',
-      whereArgs: [userId],
-    );
+  // mevcut xp oku
+  final rows = await db.query(
+    'users',
+    columns: ['xp'],
+    where: 'id = ?',
+    whereArgs: [userId],
+    limit: 1,
+  );
+  if (rows.isEmpty) {
+    throw Exception('user-not-found');
   }
+
+  final currentXp = (rows.first['xp'] as int?) ?? 0;
+
+  // ✅ bu level için minimum total xp
+  final minXp = _minTotalXpForLevel(safeLevel);
+
+  // sadece yukarı çek (xp düşürmez)
+  final newXp = currentXp < minXp ? minXp : currentXp;
+
+  await db.update(
+    'users',
+    {
+      'level': safeLevel,
+      'xp': newXp,
+    },
+    where: 'id = ?',
+    whereArgs: [userId],
+  );
+}
+
 
   static Future<void> adminSetXp({
     required int userId,
@@ -675,6 +713,52 @@ class DatabaseService {
     if (rows.isEmpty) return null;
     return rows.first;
   }
+
+  // ------------------------------------------------------------
+// ADMIN: Badge reset (test için)
+// ------------------------------------------------------------
+static Future<void> adminResetBadgesAndXp({
+  required int userId,
+}) async {
+  final db = await database;
+
+  // 1) Kullanıcının mevcut XP + level’ını sıfırla
+  await db.update(
+  'users',
+  {
+    'xp': 0,
+    'level': 1,
+    'favorite_team_code': null,
+    'favorite_team_name': null,
+    'favorite_player_id': null,
+    'favorite_player_name': null,
+  },
+  where: 'id = ?',
+  whereArgs: [userId],
+);
+
+
+  // 2) Kullanıcının aldığı tüm badge’leri sil
+  await db.delete(
+    'user_badges',
+    where: 'user_id = ?',
+    whereArgs: [userId],
+  );
+
+  // 3) Prediction meta reset (accuracy badge’ler tekrar verilebilsin)
+  await db.update(
+    'predictions',
+    {
+      'exact_count': null,
+      'badges_awarded': 0,
+      'scored_at': null,
+      'points': null,
+    },
+    where: 'user_id = ?',
+    whereArgs: [userId],
+  );
+}
+
 
   // ------------------------------------------------------------
   // Favorites => badge (XP badge’den geliyor)

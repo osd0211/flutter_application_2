@@ -1,10 +1,11 @@
 // lib/services/auth_service.dart
 
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'database_service.dart';
 
-/// Auth servis arayüzü
-abstract class IAuthService {
+/// ✅ Auth servis arayüzü artık ChangeNotifier
+abstract class IAuthService extends ChangeNotifier {
   int? get currentUserId;      // DB'deki users.id
   String? get currentUserRole; // 'admin' / 'user'
 
@@ -12,8 +13,8 @@ abstract class IAuthService {
   String? get currentUserEmail;
   String? get currentUsername;
 
-  int get currentUserLevel; // 👈 YENİ
-  int get currentUserXp;    // 👈 YENİ
+  int get currentUserLevel;
+  int get currentUserXp;
 
   Future<void> signIn(String identifier, String password);
   Future<void> signOut();
@@ -24,10 +25,13 @@ abstract class IAuthService {
     String username,
     String password,
   );
+
+  /// ✅ DB’den tekrar çekip state’i güncelle (reset/test sonrası)
+  Future<void> refreshCurrentUser();
 }
 
 /// SQLite tabanlı auth servisi
-class AuthServiceDb implements IAuthService {
+class AuthServiceDb extends ChangeNotifier implements IAuthService {
   int? _userId;
   String? _role;
   String? _name;
@@ -96,6 +100,8 @@ class AuthServiceDb implements IAuthService {
     _username = row['username'] as String?;
     _level = (row['level'] as int?) ?? 1;
     _xp = (row['xp'] as int?) ?? 0;
+
+    notifyListeners();
   }
 
   @override
@@ -107,6 +113,8 @@ class AuthServiceDb implements IAuthService {
     _username = null;
     _level = 1;
     _xp = 0;
+
+    notifyListeners();
   }
 
   @override
@@ -125,5 +133,24 @@ class AuthServiceDb implements IAuthService {
 
     // Kayıttan sonra otomatik giriş
     await signIn(email, password);
+  }
+
+  /// ✅ DB’den tekrar oku (admin reset sonrası profilde anında güncellenir)
+  @override
+  Future<void> refreshCurrentUser() async {
+    final uid = _userId;
+    if (uid == null) return;
+
+    final row = await DatabaseService.getUserById(uid);
+    if (row == null) return;
+
+    _role = row['role'] as String?;
+    _name = row['name'] as String?;
+    _email = row['email'] as String?;
+    _username = row['username'] as String?;
+    _level = (row['level'] as int?) ?? 1;
+    _xp = (row['xp'] as int?) ?? 0;
+
+    notifyListeners();
   }
 }

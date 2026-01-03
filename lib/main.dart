@@ -50,7 +50,8 @@ class EuroScoreApp extends StatelessWidget {
     ChangeNotifierProvider<GameRepository>.value(value: Env.games),
 
     Provider<PredictionRepository>.value(value: Env.predictions),
-    Provider<IAuthService>.value(value: Env.auth),
+    ChangeNotifierProvider<IAuthService>.value(value: Env.auth),
+
   ],
   child: MaterialApp(
     title: 'EuroScore Demo',

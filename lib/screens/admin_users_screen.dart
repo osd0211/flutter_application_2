@@ -1,6 +1,9 @@
+// lib/screens/admin_users_screen.dart
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../services/database_service.dart';
+import '../services/auth_service.dart';
 
 class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({super.key});
@@ -30,17 +33,15 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   }
 
   Future<void> _editUser(Map<String, Object?> u) async {
-    final int id = u['id'] as int;
+    final int id = (u['id'] as int?) ?? -1;
     final String name = (u['name'] as String?) ?? '-';
     final String email = (u['email'] as String?) ?? '-';
     final String role = (u['role'] as String?) ?? '-';
     final String username = (u['username'] as String?) ?? '';
     final int level = (u['level'] as int?) ?? 1;
-    
 
     final usernameCtrl = TextEditingController(text: username);
     final levelCtrl = TextEditingController(text: level.toString());
-   
 
     final action = await showDialog<String>(
       context: context,
@@ -51,7 +52,10 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           children: [
             Align(
               alignment: Alignment.centerLeft,
-              child: Text('$name • $role\n$email', style: const TextStyle(fontSize: 12)),
+              child: Text(
+                '$name • $role\n$email',
+                style: const TextStyle(fontSize: 12),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -64,7 +68,6 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Level'),
             ),
-            
           ],
         ),
         actions: [
@@ -85,13 +88,17 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     try {
       final newUsername = usernameCtrl.text.trim();
       final newLevel = int.tryParse(levelCtrl.text.trim()) ?? 1;
-      
 
       if (newUsername.isNotEmpty) {
         await DatabaseService.adminUpdateUsername(userId: id, newUsername: newUsername);
       }
       await DatabaseService.adminSetLevel(userId: id, level: newLevel);
-     
+
+      // ✅ Eğer düzenlenen kullanıcı şu an login olan kullanıcıysa cache’i yenile
+      final auth = context.read<IAuthService>();
+      if (auth.currentUserId == id) {
+        await auth.refreshCurrentUser(); // ✅ doğru method
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -109,6 +116,49 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     }
   }
 
+  Future<void> _resetUserProgress({
+    required int userId,
+    required String name,
+  }) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Emin misin?'),
+        content: Text(
+          '$name kullanıcısının TÜM rozetleri ve XP sıfırlanacak.\n'
+          'Bu işlem sadece test içindir.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sıfırla'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    await DatabaseService.adminResetBadgesAndXp(userId: userId);
+
+    // ✅ Eğer resetlenen kullanıcı şu an login olan kullanıcıysa cache’i yenile
+    final auth = context.read<IAuthService>();
+    if (auth.currentUserId == userId) {
+      await auth.refreshCurrentUser(); // ✅ doğru method
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Rozetler ve XP sıfırlandı ✅')),
+    );
+
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -120,16 +170,30 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (context, i) {
                 final u = _users[i];
-                final id = u['id'];
-                final name = u['name'] ?? '-';
-                final role = u['role'] ?? '-';
-                final username = u['username'] ?? '-';
-                final level = u['level'] ?? 1;
+
+                final int id = (u['id'] as int?) ?? -1;
+                final String name = (u['name'] as String?) ?? '-';
+                final String role = (u['role'] as String?) ?? '-';
+                final String username = (u['username'] as String?) ?? '-';
+                final int level = (u['level'] as int?) ?? 1;
 
                 return ListTile(
                   title: Text('$name  (@$username)'),
                   subtitle: Text('id: $id • role: $role • level: $level'),
-                  trailing: const Icon(Icons.edit),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.restart_alt, color: Colors.orange),
+                        tooltip: 'Rozetleri & XP sıfırla (TEST)',
+                        onPressed: () => _resetUserProgress(userId: id, name: name),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit),
+                        onPressed: () => _editUser(u),
+                      ),
+                    ],
+                  ),
                   onTap: () => _editUser(u),
                 );
               },

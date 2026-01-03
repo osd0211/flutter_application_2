@@ -29,6 +29,14 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _loading = true;
 
+  // ✅ DB’den okunan user bilgileri (auth cache yerine)
+  String? _dbName;
+  String? _dbEmail;
+  String? _dbRole;
+  String? _dbUsername;
+  int _dbLevel = 1;
+  int _dbXp = 0;
+
   String? _favoriteTeamCode;
   String? _favoriteTeamName;
 
@@ -63,6 +71,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (uid == null) {
       setState(() {
+        _dbName = null;
+        _dbEmail = null;
+        _dbRole = null;
+        _dbUsername = null;
+        _dbLevel = 1;
+        _dbXp = 0;
+
         _favoriteTeamCode = null;
         _favoriteTeamName = null;
         _favoritePlayerId = null;
@@ -73,14 +88,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
+    setState(() => _loading = true);
+
     final row = await DatabaseService.getUserById(uid);
     final badges = await DatabaseService.loadBadgesForUser(uid);
 
     setState(() {
+      _dbName = row?['name'] as String?;
+      _dbEmail = row?['email'] as String?;
+      _dbRole = row?['role'] as String?;
+      _dbUsername = row?['username'] as String?;
+      _dbLevel = (row?['level'] as int?) ?? 1;
+      _dbXp = (row?['xp'] as int?) ?? 0;
+
       _favoriteTeamCode = row?['favorite_team_code'] as String?;
       _favoriteTeamName = row?['favorite_team_name'] as String?;
       _favoritePlayerId = row?['favorite_player_id'] as String?;
       _favoritePlayerName = row?['favorite_player_name'] as String?;
+
       _badges = badges;
       _loading = false;
     });
@@ -404,7 +429,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       teamName: newName,
     );
 
-    // rozetler/xp reload
     await _loadProfileFromDb();
 
     if (!mounted) return;
@@ -531,7 +555,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       playerName: newName,
     );
 
-    // rozetler/xp reload
     await _loadProfileFromDb();
 
     if (!mounted) return;
@@ -584,6 +607,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final newUsername = result.trim();
     if (newUsername.isEmpty) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Kullanıcı adı boş olamaz')),
       );
@@ -596,9 +620,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         newUsername: newUsername,
       );
 
+      await _loadProfileFromDb();
+
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Username güncellendi ✅ (çıkış-giriş yap)')),
+        const SnackBar(content: Text('Username güncellendi ✅')),
       );
     } catch (e) {
       if (!context.mounted) return;
@@ -742,17 +768,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<IAuthService>();
-
     final userId = auth.currentUserId ?? -1;
-    final name = auth.currentUserName ?? '-';
-    final username = auth.currentUsername ?? '-';
-    final email = auth.currentUserEmail ?? '-';
-    final role = auth.currentUserRole ?? '-';
 
-    final level = auth.currentUserLevel;
-    final xp = auth.currentUserXp;
+    final name = _dbName ?? auth.currentUserName ?? '-';
+    final username = _dbUsername ?? auth.currentUsername ?? '-';
+    final email = _dbEmail ?? auth.currentUserEmail ?? '-';
+    final role = _dbRole ?? auth.currentUserRole ?? '-';
 
-    final isAdmin = (auth.currentUserRole ?? '') == 'admin';
+    final level = _dbLevel;
+    final xp = _dbXp;
+
+    final isAdmin = (role == 'admin');
 
     final List<_TeamNameRange> ranges =
         (_favoriteTeamCode == null) ? const [] : (_historyByCode[_favoriteTeamCode!] ?? const []);
@@ -760,214 +786,220 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                const SizedBox(height: 8),
-                Text(
-                  'Profil',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-                const SizedBox(height: 12),
-
-                // PROFILE CARD
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        _row('Kullanıcı adı', username),
-                        const Divider(height: 24),
-                        _row('İsim', name),
-                        const Divider(height: 24),
-                        _row('Email', email),
-                        const Divider(height: 24),
-                        _row('Rol', role),
-                        const Divider(height: 24),
-                        _row('Level', '$level'),
-                        const Divider(height: 24),
-                        _row('XP', '$xp'),
-                      ],
-                    ),
+          : RefreshIndicator(
+              onRefresh: _loadProfileFromDb,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  const SizedBox(height: 8),
+                  Text(
+                    'Profil',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                   ),
-                ),
+                  const SizedBox(height: 12),
 
-                const SizedBox(height: 16),
-
-                // ✅ ROZETLER
-                if (_badges.isNotEmpty) ...[
+                  // PROFILE CARD
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Rozetlerim',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 10,
-                            children: _badges.map((b) {
-                              final key = (b['badge_key'] as String?) ?? '';
-                              final meta = badgeCatalog[key];
-
-                              final title = meta?.title ?? key;
-                              final icon = meta?.icon ?? Icons.verified;
-
-                              return Container(
-                                width: 110,
-                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.white24),
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(icon, size: 28),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      title,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(fontWeight: FontWeight.w600),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                          ),
+                          _row('Kullanıcı adı', username),
+                          const Divider(height: 24),
+                          _row('İsim', name),
+                          const Divider(height: 24),
+                          _row('Email', email),
+                          const Divider(height: 24),
+                          _row('Rol', role),
+                          const Divider(height: 24),
+                          _row('Level', '$level'),
+                          const Divider(height: 24),
+                          _row('XP', '$xp'),
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                ],
 
-                // FAVORITE TEAM
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.star_outline),
-                    title: const Text('Favori Takım'),
-                    subtitle: Text(_favoriteTeamName ?? 'Henüz seçilmedi'),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () => _showPickFavoriteTeamDialog(context),
-                  ),
-                ),
-
-                // TEAM NAME HISTORY
-                if (_favoriteTeamCode != null && ranges.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Takım İsim Tarihçesi',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 12),
-                          ...ranges.map((r) {
-                            final from = _seasonNum(r.fromSeason);
-                            final to = _seasonNum(r.toSeason);
-                            final years = (from == to) ? '$from' : '$from–$to';
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Text('• $years: ${r.name}'),
-                            );
-                          }),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-
-                const SizedBox(height: 12),
-
-                // FAVORITE PLAYER
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.person_outline),
-                    title: const Text('Favori Oyuncu'),
-                    subtitle: Text(_favoritePlayerName ?? 'Henüz seçilmedi'),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () => _showPickFavoritePlayerDialog(context),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // USERNAME CHANGE
-                Card(
-                  child: ListTile(
-                    leading: Icon((isAdmin || level >= 5) ? Icons.edit : Icons.lock_outline),
-                    title: const Text('Kullanıcı adı değiştirme'),
-                    subtitle: Text(
-                      isAdmin
-                          ? 'Admin ✅ (level bağımsız)'
-                          : (level >= 5 ? 'Açık ✅ (Level 5+)' : 'Kilitli 🔒 (Level 5’te açılır)'),
-                    ),
-                    trailing: (isAdmin || level >= 5)
-                        ? const Icon(Icons.arrow_forward_ios, size: 16)
-                        : const Icon(Icons.lock),
-                    onTap: (isAdmin || level >= 5)
-                        ? () => _showEditUsernameDialog(
-                              context,
-                              userId: userId,
-                              currentUsername: username,
-                              level: level,
-                              isAdmin: isAdmin,
-                            )
-                        : null,
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                // ✅ CHANGE PASSWORD
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.lock_outline),
-                    title: const Text('Şifre değiştirme'),
-                    subtitle: const Text('Mevcut şifren ile yeni şifre belirle'),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () => _showChangePasswordDialog(context),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                const Card(
-                  child: ListTile(
-                    leading: Icon(Icons.info_outline),
-                    title: Text('Nasıl level atlarım?'),
-                    subtitle: Text('Tahmin yaptıkça ve badge kazandıkça XP kazanırsın.'),
-                  ),
-                ),
-
-                if (isAdmin) ...[
                   const SizedBox(height: 16),
+
+                  // ✅ ROZETLER
+                  if (_badges.isNotEmpty) ...[
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Rozetlerim',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: _badges.map((b) {
+                                final key = (b['badge_key'] as String?) ?? '';
+                                final meta = badgeCatalog[key];
+
+                                final title = meta?.title ?? key;
+                                final icon = meta?.icon ?? Icons.verified;
+
+                                return Container(
+                                  width: 110,
+                                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.white24),
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(icon, size: 28),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        title,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(fontWeight: FontWeight.w600),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // FAVORITE TEAM
                   Card(
                     child: ListTile(
-                      leading: const Icon(Icons.admin_panel_settings),
-                      title: const Text('Admin Panel'),
-                      subtitle: const Text('Kullanıcıların username/level/xp düzenle (test)'),
+                      leading: const Icon(Icons.star_outline),
+                      title: const Text('Favori Takım'),
+                      subtitle: Text(_favoriteTeamName ?? 'Henüz seçilmedi'),
                       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const AdminUsersScreen()),
-                        );
-                      },
+                      onTap: () => _showPickFavoriteTeamDialog(context),
                     ),
                   ),
+
+                  // TEAM NAME HISTORY
+                  if (_favoriteTeamCode != null && ranges.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Takım İsim Tarihçesi',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 12),
+                            ...ranges.map((r) {
+                              final from = _seasonNum(r.fromSeason);
+                              final to = _seasonNum(r.toSeason);
+                              final years = (from == to) ? '$from' : '$from–$to';
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: Text('• $years: ${r.name}'),
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 12),
+
+                  // FAVORITE PLAYER
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.person_outline),
+                      title: const Text('Favori Oyuncu'),
+                      subtitle: Text(_favoritePlayerName ?? 'Henüz seçilmedi'),
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                      onTap: () => _showPickFavoritePlayerDialog(context),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // USERNAME CHANGE
+                  Card(
+                    child: ListTile(
+                      leading: Icon((isAdmin || level >= 5) ? Icons.edit : Icons.lock_outline),
+                      title: const Text('Kullanıcı adı değiştirme'),
+                      subtitle: Text(
+                        isAdmin
+                            ? 'Admin ✅ (level bağımsız)'
+                            : (level >= 5 ? 'Açık ✅ (Level 5+)' : 'Kilitli 🔒 (Level 5’te açılır)'),
+                      ),
+                      trailing: (isAdmin || level >= 5)
+                          ? const Icon(Icons.arrow_forward_ios, size: 16)
+                          : const Icon(Icons.lock),
+                      onTap: (isAdmin || level >= 5)
+                          ? () => _showEditUsernameDialog(
+                                context,
+                                userId: userId,
+                                currentUsername: username,
+                                level: level,
+                                isAdmin: isAdmin,
+                              )
+                          : null,
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // ✅ CHANGE PASSWORD
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.lock_outline),
+                      title: const Text('Şifre değiştirme'),
+                      subtitle: const Text('Mevcut şifren ile yeni şifre belirle'),
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                      onTap: () => _showChangePasswordDialog(context),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  const Card(
+                    child: ListTile(
+                      leading: Icon(Icons.info_outline),
+                      title: Text('Nasıl level atlarım?'),
+                      subtitle: Text('Tahmin yaptıkça ve badge kazandıkça XP kazanırsın.'),
+                    ),
+                  ),
+
+                  if (isAdmin) ...[
+                    const SizedBox(height: 16),
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.admin_panel_settings),
+                        title: const Text('Admin Panel'),
+                        subtitle: const Text('Kullanıcıların username/level/xp düzenle (test)'),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                        onTap: () async {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AdminUsersScreen()),
+                          );
+                          // ✅ admin panelden dönünce tekrar DB’den çek
+                          if (!mounted) return;
+                          await _loadProfileFromDb();
+                        },
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
     );
   }
