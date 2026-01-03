@@ -2,12 +2,13 @@ import 'package:flutter/foundation.dart';
 
 import '../models.dart';
 import 'data_source.dart';
-
-
+import 'database_service.dart';
 
 class GameRepository extends ChangeNotifier {
   DateTime? _selectedDay;
-  SimulationPhase _phase = SimulationPhase.finished;
+
+  /// Default'u notStarted yapalım; gerçek değer DB'den yüklenecek
+  SimulationPhase _phase = SimulationPhase.notStarted;
 
   List<MatchScore> _matches = const [];
   Map<String, PlayerStat> _box = const {};
@@ -31,13 +32,22 @@ class GameRepository extends ChangeNotifier {
     final list = <Player>[];
     for (final id in ids) {
       final p = _players[id];
-      if (p != null) {
-        list.add(p);
-      }
+      if (p != null) list.add(p);
     }
 
     list.sort((a, b) => a.name.compareTo(b.name));
     return list;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ✅ App açılışında phase'i DB'den yükle (gir-çık bug fix)
+  // ---------------------------------------------------------------------------
+  Future<void> loadSimulationPhaseFromDb() async {
+    final saved = await DatabaseService.loadSimulationPhase();
+    if (saved != null && saved != _phase) {
+      _phase = saved;
+      notifyListeners();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -63,11 +73,17 @@ class GameRepository extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Simülasyon aşaması
+  // ✅ Simülasyon aşaması (DB'ye kaydet)
   // ---------------------------------------------------------------------------
-  void setSimulationPhase(SimulationPhase phase) {
+  Future<void> setSimulationPhase(SimulationPhase phase) async {
     if (_phase == phase) return;
+
     _phase = phase;
     notifyListeners();
+
+    // ✅ persist (restart / gir-çık problemi çözülür)
+    await DatabaseService.saveSimulationPhase(phase);
+
+    // ✅ badge finalize tetiklerin varsa burada kalsın / dokunmuyoruz
   }
 }

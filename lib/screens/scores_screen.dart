@@ -193,12 +193,10 @@ class _ScoresScreenState extends State<ScoresScreen> {
     bool isAfterAdmin = false;
 
     if (adminDay != null) {
-      adminDateOnly =
-          DateTime(adminDay.year, adminDay.month, adminDay.day);
+      adminDateOnly = DateTime(adminDay.year, adminDay.month, adminDay.day);
       isBeforeAdmin = selDateOnly.isBefore(adminDateOnly);
       isAfterAdmin = selDateOnly.isAfter(adminDateOnly);
     }
-    
 
     return Column(
       children: [
@@ -298,9 +296,7 @@ class _ScoresScreenState extends State<ScoresScreen> {
                     final newPhase = index == 0
                         ? SimulationPhase.notStarted
                         : SimulationPhase.finished;
-                    context
-                        .read<GameRepository>()
-                        .setSimulationPhase(newPhase);
+                    context.read<GameRepository>().setSimulationPhase(newPhase);
                   },
                   children: const [
                     Padding(
@@ -316,8 +312,7 @@ class _ScoresScreenState extends State<ScoresScreen> {
               ],
             ),
           ),
-        if (isAdmin)
-          const Divider(height: 1, color: Colors.white12),
+        if (isAdmin) const Divider(height: 1, color: Colors.white12),
 
         // Maç listesi
         Expanded(

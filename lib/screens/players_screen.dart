@@ -16,17 +16,36 @@ class PlayersScreen extends StatefulWidget {
   State<PlayersScreen> createState() => _PlayersScreenState();
 }
 
-class _PlayersScreenState extends State<PlayersScreen> {
+class _PlayersScreenState extends State<PlayersScreen>
+    with WidgetsBindingObserver {
   PlayerSortBy _sortBy = PlayerSortBy.points;
 
   /// Admin'in seçtiği global gün (settings.current_day_date)
   DateTime? _adminDay;
   bool _loadingAdminDay = true;
 
+  /// selectedDay değişimini yakalamak için
+  DateTime? _lastSelectedDay;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadAdminDay();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// App geri gelince (gir-çık yapınca) admin day'i tekrar DB'den al
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadAdminDay();
+    }
   }
 
   Future<void> _loadAdminDay() async {
@@ -42,6 +61,26 @@ class _PlayersScreenState extends State<PlayersScreen> {
   Widget build(BuildContext context) {
     final repo = context.watch<GameRepository>();
     final day = repo.selectedDay;
+
+    // ✅ selectedDay değişince adminDay'i DB'den tekrar çek (esas bug fix)
+    if (day != null) {
+      final current = DateTime(day.year, day.month, day.day);
+      final last = _lastSelectedDay == null
+          ? null
+          : DateTime(
+              _lastSelectedDay!.year,
+              _lastSelectedDay!.month,
+              _lastSelectedDay!.day,
+            );
+
+      if (last == null || current != last) {
+        _lastSelectedDay = day;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          // ekrana her rebuild'de spam olmasın diye yalnızca gün değişince çağırıyoruz
+          _loadAdminDay();
+        });
+      }
+    }
 
     if (day == null || _loadingAdminDay) {
       return Center(
@@ -62,15 +101,14 @@ class _PlayersScreenState extends State<PlayersScreen> {
     DateTime? adminDateOnly;
     bool isBeforeAdmin = false;
     bool isAfterAdmin = false;
+
     final selDateOnly =
         DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
 
     if (adminDay != null) {
-      adminDateOnly =
-          DateTime(adminDay.year, adminDay.month, adminDay.day);
+      adminDateOnly = DateTime(adminDay.year, adminDay.month, adminDay.day);
       isBeforeAdmin = selDateOnly.isBefore(adminDateOnly);
       isAfterAdmin = selDateOnly.isAfter(adminDateOnly);
-      
     }
 
     // Sadece gerçek oyuncular: players map'inde karşılığı olan id'ler

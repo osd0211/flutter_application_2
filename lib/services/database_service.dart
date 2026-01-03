@@ -423,7 +423,7 @@ static int _minTotalXpForLevel(int level) {
     }
   }
 
-  // ------------------------------------------------------------
+   // ------------------------------------------------------------
   // SETTINGS: current_day_date
   // ------------------------------------------------------------
   static const String _currentDayKey = 'current_day_date';
@@ -446,25 +446,65 @@ static int _minTotalXpForLevel(int level) {
   }
 
   static Future<DateTime?> loadCurrentDay() async {
+  final db = await database;
+
+  final rows = await db.query(
+    'settings',
+    columns: ['value'],
+    where: 'key = ?',
+    whereArgs: [_currentDayKey], // ✅ BURASI whereArgs
+    limit: 1,
+  );
+
+  if (rows.isEmpty) return null;
+
+  final String value = rows.first['value'] as String;
+  try {
+    return DateTime.parse('${value}T00:00:00');
+  } catch (_) {
+    return null;
+  }
+}
+
+
+  // ------------------------------------------------------------
+  // SETTINGS: simulation_phase (restart bug fix)
+  // ------------------------------------------------------------
+  static const String _simulationPhaseKey = 'simulation_phase';
+
+  static Future<void> saveSimulationPhase(SimulationPhase phase) async {
+    final db = await database;
+
+    final value =
+        (phase == SimulationPhase.finished) ? 'finished' : 'notStarted';
+
+    await db.insert(
+      'settings',
+      {'key': _simulationPhaseKey, 'value': value},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  static Future<SimulationPhase?> loadSimulationPhase() async {
     final db = await database;
 
     final rows = await db.query(
       'settings',
       columns: ['value'],
       where: 'key = ?',
-      whereArgs: [_currentDayKey],
+      whereArgs: [_simulationPhaseKey],
       limit: 1,
     );
 
     if (rows.isEmpty) return null;
 
     final String value = rows.first['value'] as String;
-    try {
-      return DateTime.parse('${value}T00:00:00');
-    } catch (_) {
-      return null;
-    }
+    if (value == 'finished') return SimulationPhase.finished;
+    return SimulationPhase.notStarted;
   }
+
+
+
 
   // ------------------------------------------------------------
   // PREDICTIONS
