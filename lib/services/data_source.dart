@@ -204,7 +204,7 @@ Future<List<String>> loadAllTeamsFromAssets() async {
       if (playerId.isEmpty) continue;
       if (!_isRealPlayerId(playerId)) continue; // takım satırlarını atla
 
-      // 🔥 Aynı oyuncu zaten eklendiyse, tekrar ekleme (CSV’de duplicate var)
+      //  Aynı oyuncu zaten eklendiyse, tekrar ekleme (CSV’de duplicate var)
       if (result.containsKey(playerId)) continue;
 
       final pts = int.tryParse(row['pts'] ?? '') ?? 0;
@@ -386,3 +386,4 @@ Future<List<String>> loadAllTeamsFromAssets() async {
     return result;
   }
 }
+// OSD

@@ -27,3 +27,4 @@ class MemoryPredictionRepository implements PredictionRepository {
     return _store.fold<int>(0, (a, b) => a + b.points);
   }
 }
+// OSD

@@ -127,7 +127,7 @@ class _HomeShellState extends State<_HomeShell> {
       // Liderlik ekranı – ValueListenable bekler
       LeaderboardScreen(challenges: _challengesVN),
 
-      const ProfileScreen(), // ✅ yeni
+      const ProfileScreen(), 
     ];
   }
 
@@ -167,3 +167,4 @@ class _HomeShellState extends State<_HomeShell> {
     );
   }
 }
+// OSD

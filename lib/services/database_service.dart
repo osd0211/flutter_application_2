@@ -23,7 +23,7 @@ class DatabaseService {
 
     return openDatabase(
       dbPath,
-      version: 8, // ✅ badges + prediction meta
+      version: 8, //  badges + prediction meta
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -182,7 +182,7 @@ class DatabaseService {
         points INTEGER,
         created_at TEXT NOT NULL,
 
-        -- ✅ badge/finalize metadata (opsiyonel)
+        --  badge/finalize metadata (opsiyonel)
         exact_count INTEGER,
         badges_awarded INTEGER NOT NULL DEFAULT 0,
         scored_at TEXT,
@@ -281,7 +281,7 @@ class DatabaseService {
     return level;
   }
 
-  /// ✅ Belirli bir level'a ulaşmak için gereken MIN total XP
+  ///  Belirli bir level'a ulaşmak için gereken MIN total XP
 /// level=1 => 0
 /// level=2 => req(1)
 /// level=5 => req(1)+req(2)+req(3)+req(4)
@@ -338,7 +338,7 @@ static int _minTotalXpForLevel(int level) {
       whereArgs: [userId],
     );
 
-    // ✅ level milestone badges
+    //  level milestone badges
     if (newLevel > oldLevel) {
       await _awardLevelMilestonesIfNeeded(
         userId: userId,
@@ -452,7 +452,7 @@ static int _minTotalXpForLevel(int level) {
     'settings',
     columns: ['value'],
     where: 'key = ?',
-    whereArgs: [_currentDayKey], // ✅ BURASI whereArgs
+    whereArgs: [_currentDayKey], 
     limit: 1,
   );
 
@@ -698,7 +698,7 @@ static Future<void> adminSetLevel({
   final db = await database;
   final safeLevel = level < 1 ? 1 : level;
 
-  // ✅ old xp + old level oku (milestone için oldLevel lazım)
+  //  old xp + old level oku (milestone için oldLevel lazım)
   final rows = await db.query(
     'users',
     columns: ['xp', 'level'],
@@ -713,7 +713,7 @@ static Future<void> adminSetLevel({
   final currentXp = (rows.first['xp'] as int?) ?? 0;
   final oldLevel = (rows.first['level'] as int?) ?? 1;
 
-  // ✅ bu level için minimum total xp
+  //  bu level için minimum total xp
   final minXp = _minTotalXpForLevel(safeLevel);
 
   // sadece yukarı çek (xp düşürmez)
@@ -729,7 +729,7 @@ static Future<void> adminSetLevel({
     whereArgs: [userId],
   );
 
-  // ✅ level milestone rozetleri
+  //  level milestone rozetleri
   if (safeLevel > oldLevel) {
     await _awardLevelMilestonesIfNeeded(
       userId: userId,
@@ -746,7 +746,7 @@ static Future<void> adminSetXp({
   final db = await database;
   final safeXp = xp < 0 ? 0 : xp;
 
-  // ✅ old level oku (milestone için)
+  //  old level oku (milestone için)
   final rows = await db.query(
     'users',
     columns: ['level'],
@@ -769,7 +769,7 @@ static Future<void> adminSetXp({
     whereArgs: [userId],
   );
 
-  // ✅ level milestone rozetleri
+  //  level milestone rozetleri
   if (newLevel > oldLevel) {
     await _awardLevelMilestonesIfNeeded(
       userId: userId,
@@ -825,7 +825,7 @@ static Future<void> adminResetBadgesAndXp({
     whereArgs: [userId],
   );
 
-  // 2.5) ✅ user's predictions delete (so first_prediction can be re-earned in tests)
+  // 2.5)  user's predictions delete (so first_prediction can be re-earned in tests)
 await db.delete(
   'predictions',
   where: 'user_id = ?',
@@ -867,7 +867,7 @@ await db.delete(
 
     if (teamCode == null || teamCode.trim().isEmpty) return;
 
-    // ✅ badge -> XP
+    //  badge -> XP
     await awardBadgeOnce(userId: userId, badgeKey: 'fav_team_set');
   }
 
@@ -887,13 +887,13 @@ await db.delete(
 
     if (playerId == null || playerId.trim().isEmpty) return;
 
-    // ✅ badge -> XP
+    //  badge -> XP
     await awardBadgeOnce(userId: userId, badgeKey: 'fav_player_set');
   }
 
   static Future<void> finalizeScoresForMatches({
   required List<String> matchIds,
-  required Map<String, PlayerStat> boxscoreByPlayerId, // ✅ {playerId -> PlayerStat}
+  required Map<String, PlayerStat> boxscoreByPlayerId, //  {playerId -> PlayerStat}
 }) async {
   if (matchIds.isEmpty) return;
 
@@ -901,7 +901,7 @@ await db.delete(
 
   final placeholders = List.filled(matchIds.length, '?').join(',');
 
-  // ✅ Only predictions not finalized yet
+  //  Only predictions not finalized yet
   final preds = await db.rawQuery('''
     SELECT *
     FROM predictions
@@ -933,7 +933,7 @@ await db.delete(
     if (predAst == stat.ast) exact++;
     if (predReb == stat.reb) exact++;
 
-    // ✅ write meta so we don't re-award
+    //  write meta so we don't re-award
     await db.update(
       'predictions',
       {
@@ -945,7 +945,7 @@ await db.delete(
       whereArgs: [predId],
     );
 
-    // ✅ award accuracy badges (once)
+    //  award accuracy badges (once)
     if (exact == 1) {
       await awardBadgeOnce(userId: userId, badgeKey: 'exact_1');
     }
@@ -959,7 +959,7 @@ await db.delete(
 }
 
   // ------------------------------------------------------------
-  // ✅ Change Password
+  //  Change Password
   // ------------------------------------------------------------
   static Future<void> changePassword({
     required int userId,
@@ -999,3 +999,4 @@ await db.delete(
 
 
 }
+// OSD

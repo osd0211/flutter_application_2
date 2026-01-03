@@ -118,7 +118,7 @@ Future<List<_UserChallengeScore>> _loadScoresForSelectedDay(
   final matchIds = games.map((g) => g.gameId).toList();
   if (matchIds.isEmpty) return [];
 
-  // ✅ maç bittiyse: finalize (badge/XP) tek sefer çalışsın
+  //  maç bittiyse: finalize (badge/XP) tek sefer çalışsın
   if (showScores) {
     await DatabaseService.finalizeScoresForMatches(
       matchIds: matchIds,
@@ -519,3 +519,4 @@ class LeaderboardScreen extends StatelessWidget {
     );
   }
 }
+// OSD

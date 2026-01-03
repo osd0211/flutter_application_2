@@ -22,7 +22,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   bool _submitting = false;
 
-  // ✅ eye toggles
+  //  eye toggles
   bool _obscurePass1 = true;
   bool _obscurePass2 = true;
 
@@ -154,7 +154,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
               const SizedBox(height: 12),
 
-              // ✅ password with eye icon
+              //  password with eye icon
               TextFormField(
                 controller: _passCtrl,
                 decoration: _passDecoration(
@@ -176,7 +176,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
               const SizedBox(height: 12),
 
-              // ✅ password repeat with eye icon
+              // password repeat with eye icon
               TextFormField(
                 controller: _pass2Ctrl,
                 decoration: _passDecoration(
@@ -211,3 +211,4 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 }
+// OSD

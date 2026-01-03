@@ -97,7 +97,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       // ✅ Eğer düzenlenen kullanıcı şu an login olan kullanıcıysa cache’i yenile
       final auth = context.read<IAuthService>();
       if (auth.currentUserId == id) {
-        await auth.refreshCurrentUser(); // ✅ doğru method
+        await auth.refreshCurrentUser(); 
       }
 
       if (!mounted) return;
@@ -148,7 +148,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     // ✅ Eğer resetlenen kullanıcı şu an login olan kullanıcıysa cache’i yenile
     final auth = context.read<IAuthService>();
     if (auth.currentUserId == userId) {
-      await auth.refreshCurrentUser(); // ✅ doğru method
+      await auth.refreshCurrentUser(); 
     }
 
     if (!mounted) return;
@@ -201,3 +201,4 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     );
   }
 }
+// OSD

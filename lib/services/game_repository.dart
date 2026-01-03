@@ -40,7 +40,7 @@ class GameRepository extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // ✅ App açılışında phase'i DB'den yükle (gir-çık bug fix)
+  //  App açılışında phase'i DB'den yükle (gir-çık bug fix)
   // ---------------------------------------------------------------------------
   Future<void> loadSimulationPhaseFromDb() async {
     final saved = await DatabaseService.loadSimulationPhase();
@@ -73,7 +73,7 @@ class GameRepository extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // ✅ Simülasyon aşaması (DB'ye kaydet)
+  //  Simülasyon aşaması (DB'ye kaydet)
   // ---------------------------------------------------------------------------
   Future<void> setSimulationPhase(SimulationPhase phase) async {
     if (_phase == phase) return;
@@ -81,9 +81,10 @@ class GameRepository extends ChangeNotifier {
     _phase = phase;
     notifyListeners();
 
-    // ✅ persist (restart / gir-çık problemi çözülür)
+    //  persist (restart / gir-çık problemi çözülür)
     await DatabaseService.saveSimulationPhase(phase);
 
-    // ✅ badge finalize tetiklerin varsa burada kalsın / dokunmuyoruz
+    //  badge finalize tetiklerin varsa burada kalsın / dokunmuyoruz
   }
 }
+// OSD

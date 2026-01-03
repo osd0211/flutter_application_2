@@ -19,7 +19,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _busy = false;
   String? _error;
 
-  // ✅ eye toggle
+  
   bool _obscurePass = true;
 
   @override
@@ -102,7 +102,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const SizedBox(height: 12),
 
-                // ✅ password with eye icon
+                
                 TextField(
                   controller: _pass,
                   obscureText: _obscurePass,
@@ -171,3 +171,4 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+// OSD

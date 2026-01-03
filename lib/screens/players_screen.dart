@@ -62,7 +62,7 @@ class _PlayersScreenState extends State<PlayersScreen>
     final repo = context.watch<GameRepository>();
     final day = repo.selectedDay;
 
-    // ✅ selectedDay değişince adminDay'i DB'den tekrar çek (esas bug fix)
+    // selectedDay değişince adminDay'i DB'den tekrar çek (esas bug fix)
     if (day != null) {
       final current = DateTime(day.year, day.month, day.day);
       final last = _lastSelectedDay == null
@@ -255,3 +255,4 @@ class _PlayersScreenState extends State<PlayersScreen>
     );
   }
 }
+// OSD

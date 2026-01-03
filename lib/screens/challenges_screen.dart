@@ -236,7 +236,7 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
       return;
     }
 
-    // ✅ Günlük limit: base 5 + her 5 level +1
+    //  Günlük limit: base 5 + her 5 level +1
     final userRow = await DatabaseService.getUserById(userId);
     final int level = ((userRow?['level'] as int?) ?? 1);
     final int dailyLimit = DatabaseService.totalPredictionLimit(level);
@@ -278,7 +278,7 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
       createdAt: DateTime.now(),
     );
 
-    // ✅ Yeni mi update mi?
+    //  Yeni mi update mi?
     final existingIndex = widget.store.indexWhere((e) => e.id == item.id);
     final bool isNewPrediction = existingIndex < 0;
 
@@ -292,10 +292,10 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
       predReb: item.rebounds,
     );
 
-    // ✅ XP sadece ilk kez tahmin girince (+20)
+    //  XP sadece ilk kez tahmin girince (+20)
     if (isNewPrediction) {
       await DatabaseService.addXp(userId: userId, gainedXp: 20);
-       // ✅ NEW: first_prediction + day_5_predictions badge check
+       
       await DatabaseService.onNewPredictionCreated(userId);
     }
 
@@ -476,3 +476,4 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
     );
   }
 }
+// OSD

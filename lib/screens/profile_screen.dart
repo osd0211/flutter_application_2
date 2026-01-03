@@ -29,7 +29,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _loading = true;
 
-  // ✅ DB’den okunan user bilgileri (auth cache yerine)
+  //  DB’den okunan user bilgileri (auth cache yerine)
   String? _dbName;
   String? _dbEmail;
   String? _dbRole;
@@ -46,7 +46,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, List<_TeamNameRange>> _historyByCode = {};
   Map<String, String> _playerIdToName = {};
 
-  // ✅ rozetler
+  //  rozetler
   List<Map<String, Object?>> _badges = [];
 
   @override
@@ -111,9 +111,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  // ------------------------------------------------------------
-  // ✅ CSV parser (quote destekli)
-  // ------------------------------------------------------------
+  
+  //  CSV parser (quote destekli)
+  
   List<String> _parseCsvLine(String line) {
     final out = <String>[];
     final sb = StringBuffer();
@@ -139,7 +139,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ------------------------------------------------------------
-  // ✅ Header’dan code -> name (son görülen isim)
+  //  Header’dan code -> name (son görülen isim)
   // ------------------------------------------------------------
   Future<Map<String, String>> _loadTeamCodeToNameFromHeader() async {
     final csv = await rootBundle.loadString('data_raw/euroleague_header.csv');
@@ -187,7 +187,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ------------------------------------------------------------
-  // ✅ Takım isim tarihçesi
+  //  Takım isim tarihçesi
   // ------------------------------------------------------------
   Future<Map<String, List<_TeamNameRange>>> _buildTeamNameHistoryFromHeader() async {
     final csv = await rootBundle.loadString('data_raw/euroleague_header.csv');
@@ -264,7 +264,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ------------------------------------------------------------
-  // ✅ Oyuncu CSV -> (player_id -> player_name) sadece SON SEZON
+  //  Oyuncu CSV -> (player_id -> player_name) sadece SON SEZON
   // ------------------------------------------------------------
   int _seasonNumFromE(String seasonCode) {
     final digits = seasonCode.replaceAll(RegExp(r'[^0-9]'), '');
@@ -318,7 +318,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ------------------------------------------------------------
-  // ✅ Favori takım seç
+  //  Favori takım seç
   // ------------------------------------------------------------
   Future<void> _showPickFavoriteTeamDialog(BuildContext context) async {
     final auth = context.read<IAuthService>();
@@ -442,7 +442,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ------------------------------------------------------------
-  // ✅ Favori oyuncu seç
+  //  Favori oyuncu seç
   // ------------------------------------------------------------
   Future<void> _showPickFavoritePlayerDialog(BuildContext context) async {
     final auth = context.read<IAuthService>();
@@ -568,7 +568,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ------------------------------------------------------------
-  // ✅ Username edit
+  //  Username edit
   // ------------------------------------------------------------
   Future<void> _showEditUsernameDialog(
     BuildContext context, {
@@ -640,7 +640,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ------------------------------------------------------------
-  // ✅ Change Password (dialog)
+  //  Change Password (dialog)
   // ------------------------------------------------------------
   Future<void> _showChangePasswordDialog(BuildContext context) async {
     final auth = context.read<IAuthService>();
@@ -973,7 +973,7 @@ if (_badges.isNotEmpty) ...[
 
                   const SizedBox(height: 12),
 
-                  // ✅ CHANGE PASSWORD
+                  //  CHANGE PASSWORD
                   Card(
                     child: ListTile(
                       leading: const Icon(Icons.lock_outline),
@@ -1006,7 +1006,7 @@ if (_badges.isNotEmpty) ...[
                           await Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => const AdminUsersScreen()),
                           );
-                          // ✅ admin panelden dönünce tekrar DB’den çek
+                          //  admin panelden dönünce tekrar DB’den çek
                           if (!mounted) return;
                           await _loadProfileFromDb();
                         },
@@ -1034,3 +1034,4 @@ if (_badges.isNotEmpty) ...[
     );
   }
 }
+// OSD

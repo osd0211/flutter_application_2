@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'database_service.dart';
 
-/// ✅ Auth servis arayüzü artık ChangeNotifier
+///  Auth servis arayüzü artık ChangeNotifier
 abstract class IAuthService extends ChangeNotifier {
   int? get currentUserId;      // DB'deki users.id
   String? get currentUserRole; // 'admin' / 'user'
@@ -26,7 +26,7 @@ abstract class IAuthService extends ChangeNotifier {
     String password,
   );
 
-  /// ✅ DB’den tekrar çekip state’i güncelle (reset/test sonrası)
+  ///  DB’den tekrar çekip state’i güncelle (reset/test sonrası)
   Future<void> refreshCurrentUser();
 }
 
@@ -135,7 +135,7 @@ class AuthServiceDb extends ChangeNotifier implements IAuthService {
     await signIn(email, password);
   }
 
-  /// ✅ DB’den tekrar oku (admin reset sonrası profilde anında güncellenir)
+  ///  DB’den tekrar oku (admin reset sonrası profilde anında güncellenir)
   @override
   Future<void> refreshCurrentUser() async {
     final uid = _userId;
@@ -154,3 +154,4 @@ class AuthServiceDb extends ChangeNotifier implements IAuthService {
     notifyListeners();
   }
 }
+// OSD
